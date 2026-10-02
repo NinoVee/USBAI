@@ -104,7 +104,12 @@ symlinks, because exFAT cannot store them. If the GitHub API is blocked or
 rate-limited, it lists `bNNNN` tags with `git ls-remote` and probes
 the known asset names directly. All runtimes come to about 1.7 GB, about 1.2 GB
 of which is the Windows CUDA build. If upstream renames its assets, update
-`runtimeAssets` and `releaseByProbing` in `cmd/drivetool/main.go`.
+`runtimeAssets` and `probeAssets` in `cmd/drivetool/main.go`.
+
+By default it installs the newest numbered `bNNNN` build whose release has
+every runtime. GitHub's "latest" llama.cpp release can be a `vX.Y.Z`
+release with no prebuilt binaries, and the newest build may still be
+uploading its files. Pass `-tag bNNNN` to pin a specific build.
 
 Last verified against llama.cpp b11332: all 9 runtimes downloaded. A real
 end-to-end run on Linux x64 (Qwen3 1.7B + nomic-embed) answered questions
