@@ -21,9 +21,11 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -108,21 +110,12 @@ type release struct {
 }
 
 func fetchRuntime(drive, tag string, only map[string]bool) error {
-	api := "https://api.github.com/repos/ggml-org/llama.cpp/releases/latest"
-	if tag != "latest" {
-		api = "https://api.github.com/repos/ggml-org/llama.cpp/releases/tags/" + tag
-	}
-	resp, err := http.Get(api)
+	rel, err := releaseFromAPI(tag)
 	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("GitHub API: %s", resp.Status)
-	}
-	var rel release
-	if err := json.NewDecoder(resp.Body).Decode(&rel); err != nil {
-		return err
+		fmt.Printf("GitHub API unavailable (%v); probing release downloads directly\n", err)
+		if rel, err = releaseByProbing(tag); err != nil {
+			return err
+		}
 	}
 	fmt.Printf("llama.cpp release %s\n", rel.TagName)
 
@@ -180,6 +173,80 @@ func fetchRuntime(drive, tag string, only map[string]bool) error {
 		fmt.Printf("No matching release asset for: %s (asset names may have changed; edit runtimeAssets in drivetool)\n", strings.Join(missing, ", "))
 	}
 	return nil
+}
+
+func releaseFromAPI(tag string) (release, error) {
+	var rel release
+	api := "https://api.github.com/repos/ggml-org/llama.cpp/releases/latest"
+	if tag != "latest" {
+		api = "https://api.github.com/repos/ggml-org/llama.cpp/releases/tags/" + tag
+	}
+	resp, err := http.Get(api)
+	if err != nil {
+		return rel, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return rel, fmt.Errorf("GitHub API: %s", resp.Status)
+	}
+	err = json.NewDecoder(resp.Body).Decode(&rel)
+	return rel, err
+}
+
+// releaseByProbing builds the asset list without the GitHub API (which some
+// networks block or rate-limit): it resolves "latest" from the repository's
+// tags with git, then checks which known asset names exist for that tag.
+func releaseByProbing(tag string) (release, error) {
+	rel := release{TagName: tag}
+	if tag == "latest" {
+		out, err := exec.Command("git", "ls-remote", "--tags", "https://github.com/ggml-org/llama.cpp", "refs/tags/b*").Output()
+		if err != nil {
+			return rel, fmt.Errorf("could not list llama.cpp tags (is git installed?): %w; pass -tag bNNNN", err)
+		}
+		best := 0
+		for _, line := range strings.Split(string(out), "\n") {
+			ref := line[strings.LastIndex(line, "/")+1:]
+			if n, err := strconv.Atoi(strings.TrimPrefix(ref, "b")); err == nil && strings.HasPrefix(ref, "b") && n > best {
+				best = n
+			}
+		}
+		if best == 0 {
+			return rel, errors.New("no llama.cpp release tags found; pass -tag bNNNN")
+		}
+		rel.TagName = "b" + strconv.Itoa(best)
+	}
+	var names []string
+	for _, p := range []string{"ubuntu-x64", "ubuntu-vulkan-x64", "ubuntu-arm64", "macos-arm64", "macos-x64", "win-cpu-x64", "win-cpu-arm64", "win-vulkan-x64"} {
+		for _, ext := range []string{".tar.gz", ".zip"} {
+			names = append(names, "llama-"+rel.TagName+"-bin-"+p+ext)
+		}
+	}
+	for _, v := range []string{"12.4", "12.6", "12.8", "12.9"} {
+		names = append(names, "llama-"+rel.TagName+"-bin-win-cuda-"+v+"-x64.zip", "cudart-llama-bin-win-cuda-"+v+"-x64.zip")
+	}
+	client := &http.Client{
+		Timeout:       30 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
+	base := "https://github.com/ggml-org/llama.cpp/releases/download/" + rel.TagName + "/"
+	for _, n := range names {
+		resp, err := client.Head(base + n)
+		if err != nil {
+			return rel, err
+		}
+		resp.Body.Close()
+		if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusFound {
+			rel.Assets = append(rel.Assets, struct {
+				Name string `json:"name"`
+				URL  string `json:"browser_download_url"`
+				Size int64  `json:"size"`
+			}{Name: n, URL: base + n})
+		}
+	}
+	if len(rel.Assets) == 0 {
+		return rel, fmt.Errorf("no downloadable assets found for llama.cpp %s", rel.TagName)
+	}
+	return rel, nil
 }
 
 // installRuntime extracts archives and copies llama-server plus the shared

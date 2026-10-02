@@ -100,8 +100,15 @@ read and write. Copy the contents of `dist/PRIVATE-AI` to its root.
 
 `drivetool fetch-runtime` matches llama.cpp GitHub release assets by name and
 keeps only `llama-server` and its shared libraries. It also dereferences
-symlinks, because exFAT cannot store them. If upstream renames its assets,
-update `runtimeAssets` in `cmd/drivetool/main.go`.
+symlinks, because exFAT cannot store them. If the GitHub API is blocked or
+rate-limited, it finds the newest `bNNNN` tag with `git ls-remote` and probes
+the known asset names directly. All runtimes come to about 1.7 GB, about 1.2 GB
+of which is the Windows CUDA build. If upstream renames its assets, update
+`runtimeAssets` and `releaseByProbing` in `cmd/drivetool/main.go`.
+
+Last verified against llama.cpp b11332: all 9 runtimes downloaded. A real
+end-to-end run on Linux x64 (Qwen3 1.7B + nomic-embed) answered questions
+about an uploaded contract with correct citations.
 
 ### Default models (all Apache-2.0)
 
