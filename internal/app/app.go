@@ -188,9 +188,37 @@ func (a *App) startServer(m config.Model, embedding bool) (*llama.Server, string
 		}
 	}
 	if !tried {
-		return nil, "", fmt.Errorf("no runtime for %s on this drive (looked for runtime/%v)", a.host.Slug(), a.host.RuntimeCandidates())
+		return nil, "", fmt.Errorf("no runtime for %s on this drive: looked for %s in %s/{%s}; %s",
+			a.host.Slug(), a.host.ServerBinary(), a.cfg.Path("runtime"),
+			strings.Join(a.host.RuntimeCandidates(), ","), describeDir(a.cfg.Path("runtime")))
 	}
 	return nil, "", errors.Join(errs...)
+}
+
+// describeDir summarizes what is in dir, to make "file not found" errors
+// diagnosable from a screenshot.
+func describeDir(dir string) string {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return "that folder cannot be read: " + err.Error()
+	}
+	var parts []string
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), ".") {
+			continue
+		}
+		n := e.Name()
+		if e.IsDir() {
+			if sub, err := os.ReadDir(filepath.Join(dir, n)); err == nil {
+				n = fmt.Sprintf("%s/ (%d files)", n, len(sub))
+			}
+		}
+		parts = append(parts, n)
+	}
+	if len(parts) == 0 {
+		return "that folder is empty — run drivetool fetch-runtime and copy runtime/ to the drive"
+	}
+	return "found: " + strings.Join(parts, ", ")
 }
 
 func (a *App) startChat() {
