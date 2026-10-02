@@ -8,6 +8,13 @@
 # USB drive (exFAT is readable and writable on Windows, macOS and Linux).
 set -eu
 cd "$(dirname "$0")/.."
+if ! command -v go >/dev/null 2>&1; then
+  echo "Go is not installed. Install Go 1.24 or newer, then run this again:"
+  echo "  macOS:   brew install go   (or the installer from https://go.dev/dl/)"
+  echo "  Windows: winget install GoLang.Go   (or https://go.dev/dl/)"
+  echo "  Linux:   https://go.dev/doc/install"
+  exit 1
+fi
 OUT=dist/PRIVATE-AI
 VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo dev)
 
