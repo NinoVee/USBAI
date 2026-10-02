@@ -34,6 +34,11 @@
 
   <!-- Chat -->
   <section id="view-chat" class="screen view hidden">
+    <div id="engine-error" class="banner hidden">
+      <div><strong id="engine-error-title">The AI model failed to start.</strong>
+        <pre id="engine-error-text"></pre></div>
+      <button id="engine-retry" class="primary">Retry</button>
+    </div>
     <div id="messages" class="messages">
       <div class="empty" id="chat-empty">
         <h2>What can I help you with?</h2>

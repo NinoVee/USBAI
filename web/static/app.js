@@ -99,6 +99,13 @@ async function refreshStatus() {
       pill.classList.add("error");
     }
     pill.title = st.chat_error || "";
+    const failed = st.chat_state === "error" || st.chat_state === "no_model";
+    $("engine-error").classList.toggle("hidden", !failed);
+    if (failed) {
+      $("engine-error-title").textContent = st.chat_state === "no_model"
+        ? "No AI model was found on this drive." : "The AI model failed to start.";
+      $("engine-error-text").textContent = st.chat_error || "";
+    }
     if (st.locked && $("lock").classList.contains("hidden") && $("bye").classList.contains("hidden")) showLock();
     if (state.view === "settings") renderSettings();
     return st;
@@ -469,6 +476,12 @@ $("shutdown").addEventListener("click", async () => {
   $("bye").classList.remove("hidden");
   $("engine").textContent = "Stopped";
   clearInterval(poll);
+});
+
+$("engine-retry").addEventListener("click", async () => {
+  $("engine-error").classList.add("hidden");
+  try { await api("POST", "/api/models/retry"); } catch {}
+  refreshStatus();
 });
 
 // ---- Boot ----

@@ -34,6 +34,10 @@ func (a *App) Handler(ui fs.FS, port int) http.Handler {
 		a.shutdownOnce.Do(func() { close(a.Shutdown) })
 	})
 	mux.HandleFunc("POST /api/models/select", a.handleSelectModel)
+	mux.HandleFunc("POST /api/models/retry", func(w http.ResponseWriter, r *http.Request) {
+		go a.startChat()
+		writeJSON(w, map[string]bool{"ok": true})
+	})
 
 	mux.HandleFunc("POST /api/chat", a.handleChat)
 	mux.HandleFunc("GET /api/chats", func(w http.ResponseWriter, r *http.Request) {

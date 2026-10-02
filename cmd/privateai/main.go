@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -69,6 +70,17 @@ func run() error {
 	// drive (or a stale process) does not block startup.
 	ln, err := net.Listen("tcp", "127.0.0.1:"+strconv.Itoa(cfg.ListenPort))
 	if err != nil {
+		// If Private AI is already running (e.g. the launcher was
+		// double-clicked twice), reuse it: a second copy would load the
+		// models again and can run the computer out of memory.
+		existing := fmt.Sprintf("http://127.0.0.1:%d/", cfg.ListenPort)
+		if alreadyRunning(existing) {
+			fmt.Printf("Private AI is already running. Opening %s\n", existing)
+			if !*noBrowser {
+				platform.OpenBrowser(existing)
+			}
+			return nil
+		}
 		if ln, err = net.Listen("tcp", "127.0.0.1:0"); err != nil {
 			return err
 		}
@@ -106,6 +118,21 @@ func run() error {
 	srv.Shutdown(ctx)
 	a.Stop()
 	return nil
+}
+
+func alreadyRunning(url string) bool {
+	c := &http.Client{Timeout: 2 * time.Second}
+	resp, err := c.Get(url + "api/status")
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	var st map[string]any
+	if json.NewDecoder(resp.Body).Decode(&st) != nil {
+		return false
+	}
+	_, ok := st["chat_state"]
+	return ok
 }
 
 // pause keeps a double-clicked console window open long enough to read an error.
