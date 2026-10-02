@@ -1,0 +1,144 @@
+# Private AI: a portable, offline AI drive
+
+Plug in a USB drive, double-click **Start**, and a private assistant opens in
+your browser. It runs on the host computer's CPU or GPU with
+[llama.cpp](https://github.com/ggml-org/llama.cpp). It can read your PDFs and
+documents, and it remembers what you ask it to. All of it stays on the drive,
+encrypted. No internet, account, subscription or API key is needed.
+
+> Portable AI for Windows, macOS, and Linux. No cloud. No subscription.
+> Your conversations and files remain on your device.
+
+![Chat with a document](docs/screenshot-chat.png)
+
+## Drive layout
+
+```
+PRIVATE-AI/                         (exFAT, 64 GB+)
+├── Start-Windows.bat               launchers: pick the right binary for the OS/CPU
+├── Start-macOS.command
+├── start-linux.sh
+├── config.json                     models, port, GPU layers, system prompt
+├── bin/<os>-<arch>/privateai       the app (one ~7 MB static Go binary per platform)
+├── runtime/                        llama.cpp llama-server builds
+│   ├── windows-x64-cuda | -vulkan | -cpu,  windows-arm64-cpu
+│   ├── macos-arm64 (Metal) | macos-x64
+│   └── linux-x64-vulkan | -cpu,  linux-arm64-cpu
+├── models/
+│   ├── chat/                       general assistant GGUF models (~1–5 GB each)
+│   ├── embed/                      embedding model for document search (<200 MB)
+│   └── specialist/                 optional extra models
+└── data/
+    ├── settings.json               non-secret preferences (chosen model)
+    └── vault/                      encrypted chats, memory, documents, search index
+```
+
+Typical 64 GB budget: models 5–15 GB, runtimes about 1.5 GB for all platforms,
+app under 50 MB, and the rest for your documents, index and free space.
+
+## How it works
+
+1. **Launcher**: `Start-*` runs `bin/<os>-<arch>/privateai`. The app finds the
+   drive root by looking for `config.json`.
+2. **Hardware detection**: OS, CPU architecture, RAM, and NVIDIA (CUDA),
+   Vulkan or Apple Silicon (Metal) support.
+3. **Runtime fallback**: it tries `runtime/<platform>-cuda`, then `-vulkan`,
+   then `-cpu`. A runtime that fails to load the model is skipped, so CPU is
+   always the universal fallback.
+4. **Model choice**: it uses the first chat model in `config.json` that is on
+   the drive and fits in RAM. You can switch models in Settings.
+5. **Two local `llama-server` processes** run on `127.0.0.1` with random
+   ports: one for chat and one for embeddings.
+6. **Web UI** at `http://127.0.0.1:8740`, embedded in the binary.
+
+### Privacy and security
+
+| | |
+|---|---|
+| Network | Every server binds to `127.0.0.1` only, and API requests from non-loopback addresses are refused. Nothing calls out. |
+| Other websites | Host-header check (blocks DNS rebinding), and every write request needs a custom header (blocks CSRF). Strict CSP. |
+| Data at rest | `data/vault`: AES-256-GCM. The key comes from your passphrase (PBKDF2-SHA256, 600k iterations, random salt). Object names are HMAC'd, so file names reveal nothing. Each object is bound to its name, so swapping files is detected. |
+| Locking | The key lives only in RAM. **Lock** or **Shut down** discards it. |
+| Host computer | Nothing is written outside the drive. Logs go only to the console window. |
+| Uploaded HTML/SVG | Served back as plain text, so it cannot run script in the app's origin. |
+
+Forgetting the passphrase makes the vault unrecoverable. That is deliberate.
+
+### Documents (local RAG)
+
+- Text is extracted in-process from PDF, DOCX, TXT/MD, CSV/TSV, JSON, HTML, XML and RTF.
+- Text is split into chunks of about 1200 characters with overlap, then embedded locally.
+- Search is hybrid: BM25 keyword ranking fused with embedding cosine
+  similarity (reciprocal rank fusion). Without an embedding model it falls
+  back to keyword search, and documents added meanwhile are embedded later.
+- **Ask about a file**: drop it on the chat, or press *Ask* in Files. If the
+  whole document fits in the context window, the model reads all of it. That
+  matters for "summarize this contract". Otherwise it gets the most relevant
+  excerpts. Sources are shown under each answer.
+
+## Building a drive
+
+You need Go 1.24 or newer.
+
+```sh
+make test              # unit tests + end-to-end test against a fake llama-server
+make drive             # cross-compile all 6 targets into dist/PRIVATE-AI
+make drive-full        # also download llama.cpp runtimes + models from config.json (several GB)
+```
+
+Or step by step:
+
+```sh
+scripts/build-drive.sh
+go run ./cmd/drivetool fetch-runtime -drive dist/PRIVATE-AI            # optionally -tag b6500 -only linux-x64-cpu
+go run ./cmd/drivetool fetch-models  -drive dist/PRIVATE-AI -only qwen3-4b,nomic-embed
+go run ./cmd/drivetool check         -drive dist/PRIVATE-AI
+```
+
+Then format the USB drive as **exFAT**, which Windows, macOS and Linux can all
+read and write. Copy the contents of `dist/PRIVATE-AI` to its root.
+
+`drivetool fetch-runtime` matches llama.cpp GitHub release assets by name and
+keeps only `llama-server` and its shared libraries. It also dereferences
+symlinks, because exFAT cannot store them. If upstream renames its assets,
+update `runtimeAssets` in `cmd/drivetool/main.go`.
+
+### Default models (all Apache-2.0)
+
+| id | model | size | RAM |
+|---|---|---|---|
+| `qwen3-8b` | Qwen3 8B Q4_K_M | ~5 GB | 16 GB+ |
+| `qwen3-4b` | Qwen3 4B Instruct 2507 Q4_K_M | ~2.5 GB | 8 GB+ |
+| `qwen3-1.7b` | Qwen3 1.7B Q4_K_M | ~1.1 GB | 4 GB+ |
+| `nomic-embed` | nomic-embed-text v1.5 Q8_0 | ~140 MB | — |
+
+To use any other GGUF model, add an entry to `config.json`.
+
+## Known limits
+
+- **Not every computer works.** Locked-down corporate or school machines often
+  block programs on removable media. Computers with very little RAM cannot run
+  the models.
+- **macOS Gatekeeper**: the binaries are unsigned. The launcher clears the
+  quarantine flag, but the first launch may still need right-click → Open.
+  Signing and notarizing is a to-do for a product release.
+- **Linux `noexec` mounts**: some desktops mount USB drives without exec
+  permission. The launcher detects this and tells you how to remount.
+- Scanned PDFs need OCR, which is not included yet.
+- USB 2.0 drives make model loading slow. USB 3 is strongly recommended.
+- If the console window is closed instead of using *Shut down*, the
+  `llama-server` child processes may keep running on Windows until logout.
+
+## Code map
+
+| path | what |
+|---|---|
+| `cmd/privateai` | launcher/server entry point |
+| `cmd/drivetool` | builds drives: fetches runtimes and models, checks the layout |
+| `internal/platform` | OS/arch/RAM/GPU detection, runtime candidates |
+| `internal/llama` | starts `llama-server`, streams chat, gets embeddings |
+| `internal/vault` | encrypted object store |
+| `internal/rag` | text extraction, chunking, hybrid index |
+| `internal/app` | app state, chat orchestration, HTTP API |
+| `web/static` | the UI (vanilla HTML/CSS/JS, embedded) |
+| `launchers/`, `drive/` | files copied to the drive root |

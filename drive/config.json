@@ -1,0 +1,46 @@
+{
+  "listen_port": 8740,
+  "open_browser": true,
+  "gpu_layers": 99,
+  "threads": 0,
+  "extra_args": [],
+  "models": [
+    {
+      "id": "qwen3-8b",
+      "name": "Qwen3 8B (large, best quality)",
+      "role": "chat",
+      "file": "models/chat/Qwen3-8B-Q4_K_M.gguf",
+      "url": "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q4_K_M.gguf",
+      "min_ram_gb": 16,
+      "context": 8192
+    },
+    {
+      "id": "qwen3-4b",
+      "name": "Qwen3 4B Instruct (balanced)",
+      "role": "chat",
+      "file": "models/chat/Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+      "url": "https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF/resolve/main/Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+      "min_ram_gb": 8,
+      "context": 8192
+    },
+    {
+      "id": "qwen3-1.7b",
+      "name": "Qwen3 1.7B (small, for low-memory computers)",
+      "role": "chat",
+      "file": "models/chat/Qwen3-1.7B-Q4_K_M.gguf",
+      "url": "https://huggingface.co/unsloth/Qwen3-1.7B-GGUF/resolve/main/Qwen3-1.7B-Q4_K_M.gguf",
+      "min_ram_gb": 4,
+      "context": 4096
+    },
+    {
+      "id": "nomic-embed",
+      "name": "Nomic Embed Text v1.5",
+      "role": "embedding",
+      "file": "models/embed/nomic-embed-text-v1.5.Q8_0.gguf",
+      "url": "https://huggingface.co/nomic-ai/nomic-embed-text-v1.5-GGUF/resolve/main/nomic-embed-text-v1.5.Q8_0.gguf",
+      "context": 2048,
+      "query_prefix": "search_query: ",
+      "document_prefix": "search_document: "
+    }
+  ]
+}

@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>Private AI</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='6' y='14' width='20' height='14' rx='3' fill='%235b6cff'/%3E%3Cpath d='M10 14v-3a6 6 0 0 1 12 0v3' stroke='%235b6cff' stroke-width='3' fill='none'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <header class="top">
+    <div class="brand">
+      <div class="title">PRIVATE AI</div>
+      <div class="tagline">Offline • Local • Secure</div>
+    </div>
+    <div id="engine" class="pill" title="Model status">Starting…</div>
+  </header>
+
+  <!-- Lock screen -->
+  <section id="lock" class="screen hidden">
+    <div class="card narrow">
+      <h1 id="lock-title">Unlock</h1>
+      <p id="lock-help" class="muted"></p>
+      <form id="lock-form">
+        <input id="pass" type="password" autocomplete="current-password" placeholder="Passphrase" required minlength="8">
+        <input id="pass2" type="password" autocomplete="new-password" placeholder="Repeat passphrase" class="hidden" minlength="8">
+        <button type="submit" class="primary" id="lock-btn">Unlock</button>
+        <p id="lock-error" class="error"></p>
+      </form>
+    </div>
+  </section>
+
+  <!-- Chat -->
+  <section id="view-chat" class="screen view hidden">
+    <div id="messages" class="messages">
+      <div class="empty" id="chat-empty">
+        <h2>What can I help you with?</h2>
+        <p class="muted">Drop a PDF, Word or text file anywhere to ask about it. Everything stays on this drive.</p>
+      </div>
+    </div>
+    <div class="composer">
+      <div id="focus" class="chips"></div>
+      <form id="chat-form">
+        <textarea id="input" rows="1" placeholder="Ask anything…" autocomplete="off"></textarea>
+        <button type="submit" class="primary" id="send" aria-label="Send">➤</button>
+      </form>
+      <div class="composer-row">
+        <label class="toggle"><input type="checkbox" id="use-docs" checked> Search my files</label>
+        <button type="button" class="link" id="new-chat">New chat</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Files -->
+  <section id="view-files" class="screen view hidden">
+    <div class="pane">
+      <div class="pane-head">
+        <h2>Files</h2>
+        <label class="button primary">Add files<input type="file" id="file-input" multiple hidden></label>
+      </div>
+      <p class="muted">Files are encrypted onto the drive and indexed for search. Supported: <span id="exts"></span></p>
+      <div id="upload-status" class="muted"></div>
+      <ul id="doc-list" class="list"></ul>
+    </div>
+  </section>
+
+  <!-- Memory -->
+  <section id="view-memory" class="screen view hidden">
+    <div class="pane">
+      <h2>Memory</h2>
+      <p class="muted">Facts the assistant should always know about you. Stored encrypted on the drive.</p>
+      <form id="memory-form" class="inline-form">
+        <input id="memory-input" placeholder="e.g. I prefer short answers. My company is Acme Ltd." autocomplete="off">
+        <button class="primary">Remember</button>
+      </form>
+      <ul id="memory-list" class="list"></ul>
+    </div>
+  </section>
+
+  <!-- Chats -->
+  <section id="view-chats" class="screen view hidden">
+    <div class="pane">
+      <h2>Chats</h2>
+      <ul id="chat-list" class="list"></ul>
+    </div>
+  </section>
+
+  <!-- Settings -->
+  <section id="view-settings" class="screen view hidden">
+    <div class="pane">
+      <h2>Settings</h2>
+      <h3>Model</h3>
+      <div id="model-list" class="list"></div>
+      <h3>This computer</h3>
+      <dl id="host-info" class="facts"></dl>
+      <h3>Privacy</h3>
+      <p class="muted">No internet, account or API key is used. Prompts, documents, chats and memory never leave this computer and are stored only on the drive, encrypted with your passphrase. Forgetting the passphrase means the data cannot be recovered.</p>
+      <div class="actions">
+        <button id="lock-now">Lock</button>
+        <button id="shutdown" class="danger">Shut down (before removing drive)</button>
+      </div>
+    </div>
+  </section>
+
+  <nav class="tabs hidden" id="tabs">
+    <button data-view="chat" class="active">Chat</button>
+    <button data-view="files">Files</button>
+    <button data-view="memory">Memory</button>
+    <button data-view="chats">Chats</button>
+    <button data-view="settings">Settings</button>
+  </nav>
+
+  <div id="drop" class="drop hidden">Drop files to add them privately</div>
+  <div id="bye" class="screen hidden"><div class="card narrow"><h1>Shut down</h1><p class="muted">Private AI has stopped and the vault is locked. You can close this tab and safely eject the drive.</p></div></div>
+</div>
+<script src="app.js"></script>
+</body>
+</html>

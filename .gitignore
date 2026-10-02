@@ -1,0 +1,4 @@
+dist/
+*.gguf
+/privateai
+/drivetool
