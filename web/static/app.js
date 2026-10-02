@@ -99,6 +99,7 @@ async function refreshStatus() {
       pill.classList.add("error");
     }
     pill.title = st.chat_error || "";
+    updateComposer();
     const failed = st.chat_state === "error" || st.chat_state === "no_model";
     $("engine-error").classList.toggle("hidden", !failed);
     if (failed) {
@@ -113,6 +114,18 @@ async function refreshStatus() {
     $("engine").textContent = "Disconnected";
     $("engine").className = "pill error";
   }
+}
+
+// The composer waits for the model: loading a few GB from a USB drive can
+// take a minute or two on first start.
+const modelReady = () => state.status && state.status.chat_state === "ready";
+function updateComposer() {
+  const ready = modelReady();
+  $("send").disabled = state.busy || !ready;
+  $("input").placeholder = ready ? "Ask anything…"
+    : state.status && state.status.chat_state === "starting"
+      ? "Loading the AI model from the drive… this can take a minute or two the first time"
+      : "The AI model is not running — see the message above";
 }
 
 // ---- Lock screen ----
@@ -283,12 +296,13 @@ async function send(text) {
   } finally {
     body.classList.remove("typing");
     state.busy = false;
-    $("send").disabled = false;
+    updateComposer();
   }
 }
 
 $("chat-form").addEventListener("submit", (e) => {
   e.preventDefault();
+  if (!modelReady() || state.busy) return; // keep the typed text until the model is ready
   const text = $("input").value;
   $("input").value = "";
   autosize();

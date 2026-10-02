@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"hash/fnv"
 	"net/http"
+	"os"
 	"strings"
+	"time"
 )
 
 func main() {
@@ -23,7 +25,16 @@ func main() {
 	flag.Bool("jinja", false, "")
 	flag.Parse()
 
-	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(`{"status":"ok"}`)) })
+	// FAKELLAMA_DELAY (e.g. "5s") simulates a slow model load.
+	delay, _ := time.ParseDuration(os.Getenv("FAKELLAMA_DELAY"))
+	start := time.Now()
+	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		if time.Since(start) < delay {
+			http.Error(w, `{"status":"loading model"}`, http.StatusServiceUnavailable)
+			return
+		}
+		w.Write([]byte(`{"status":"ok"}`))
+	})
 	http.HandleFunc("/v1/embeddings", func(w http.ResponseWriter, r *http.Request) {
 		if !*embedding {
 			http.Error(w, "embeddings disabled", 501)
