@@ -100,22 +100,21 @@ func splitList(s string) map[string]bool {
 
 // ---- Runtimes ----
 
+type asset struct {
+	Name string `json:"name"`
+	URL  string `json:"browser_download_url"`
+	Size int64  `json:"size"`
+}
+
 type release struct {
-	TagName string `json:"tag_name"`
-	Assets  []struct {
-		Name string `json:"name"`
-		URL  string `json:"browser_download_url"`
-		Size int64  `json:"size"`
-	} `json:"assets"`
+	TagName string  `json:"tag_name"`
+	Assets  []asset `json:"assets"`
 }
 
 func fetchRuntime(drive, tag string, only map[string]bool) error {
-	rel, err := releaseFromAPI(tag)
+	rel, err := pickRelease(tag, only)
 	if err != nil {
-		fmt.Printf("GitHub API unavailable (%v); probing release downloads directly\n", err)
-		if rel, err = releaseByProbing(tag); err != nil {
-			return err
-		}
+		return err
 	}
 	fmt.Printf("llama.cpp release %s\n", rel.TagName)
 
@@ -175,13 +174,118 @@ func fetchRuntime(drive, tag string, only map[string]bool) error {
 	return nil
 }
 
+// pickRelease chooses the llama.cpp release to install. Prebuilt binaries
+// are published on numbered build tags (bNNNN). GitHub's "latest" release can
+// be a vX.Y.Z release without them, and the newest build's binaries may still
+// be uploading, so for "latest" this walks back through recent build tags
+// until one has every wanted runtime.
+func pickRelease(tag string, only map[string]bool) (release, error) {
+	var cands []release
+	if tag == "latest" {
+		var err error
+		if cands, err = recentBuilds(10); err != nil {
+			return release{}, err
+		}
+	} else {
+		rel, err := releaseFromAPI(tag)
+		if err != nil {
+			rel = release{TagName: tag}
+		}
+		cands = []release{rel}
+	}
+
+	var best release
+	bestGot := 0
+	for _, rel := range cands {
+		if len(rel.Assets) == 0 {
+			rel = probeAssets(rel.TagName)
+		}
+		got, want := coverage(rel, only)
+		if got == want && want > 0 {
+			return rel, nil
+		}
+		fmt.Printf("  %s has %d of %d runtimes; trying an older build\n", rel.TagName, got, want)
+		if got > bestGot {
+			best, bestGot = rel, got
+		}
+	}
+	if bestGot > 0 {
+		return best, nil
+	}
+	return release{}, errors.New("no llama.cpp release with downloadable runtimes found; pass -tag bNNNN")
+}
+
+// coverage counts the wanted runtime folders that have a matching asset.
+func coverage(rel release, only map[string]bool) (got, want int) {
+	for _, ra := range runtimeAssets {
+		if only != nil && !only[ra.Folder] {
+			continue
+		}
+		want++
+		for _, a := range rel.Assets {
+			if ra.Pattern.MatchString(a.Name) {
+				got++
+				break
+			}
+		}
+	}
+	return got, want
+}
+
+// recentBuilds returns the newest bNNNN releases, newest first. It uses the
+// GitHub API (which includes asset lists) and falls back to git tags when the
+// API is blocked or rate-limited.
+func recentBuilds(n int) ([]release, error) {
+	var out []release
+	resp, err := http.Get("https://api.github.com/repos/ggml-org/llama.cpp/releases?per_page=30")
+	if err == nil {
+		var rels []release
+		if resp.StatusCode == http.StatusOK && json.NewDecoder(resp.Body).Decode(&rels) == nil {
+			for _, r := range rels {
+				if buildNumber(r.TagName) > 0 {
+					out = append(out, r)
+				}
+			}
+		}
+		resp.Body.Close()
+	}
+	if len(out) == 0 {
+		fmt.Println("GitHub API unavailable; listing llama.cpp builds with git")
+		gitOut, err := exec.Command("git", "ls-remote", "--tags", "https://github.com/ggml-org/llama.cpp", "refs/tags/b*").Output()
+		if err != nil {
+			return nil, fmt.Errorf("could not list llama.cpp tags (is git installed?): %w; pass -tag bNNNN", err)
+		}
+		for _, line := range strings.Split(string(gitOut), "\n") {
+			if tag := line[strings.LastIndex(line, "/")+1:]; buildNumber(tag) > 0 {
+				out = append(out, release{TagName: tag})
+			}
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return buildNumber(out[i].TagName) > buildNumber(out[j].TagName) })
+	if len(out) > n {
+		out = out[:n]
+	}
+	if len(out) == 0 {
+		return nil, errors.New("no llama.cpp build tags found; pass -tag bNNNN")
+	}
+	return out, nil
+}
+
+// buildNumber returns NNNN for a "bNNNN" tag, or 0.
+func buildNumber(tag string) int {
+	if !strings.HasPrefix(tag, "b") || strings.HasSuffix(tag, "^{}") {
+		return 0
+	}
+	n, err := strconv.Atoi(tag[1:])
+	if err != nil {
+		return 0
+	}
+	return n
+}
+
 func releaseFromAPI(tag string) (release, error) {
 	var rel release
-	api := "https://api.github.com/repos/ggml-org/llama.cpp/releases/latest"
-	if tag != "latest" {
-		api = "https://api.github.com/repos/ggml-org/llama.cpp/releases/tags/" + tag
-	}
-	resp, err := http.Get(api)
+	resp, err := http.Get("https://api.github.com/repos/ggml-org/llama.cpp/releases/tags/" + tag)
 	if err != nil {
 		return rel, err
 	}
@@ -193,60 +297,34 @@ func releaseFromAPI(tag string) (release, error) {
 	return rel, err
 }
 
-// releaseByProbing builds the asset list without the GitHub API (which some
-// networks block or rate-limit): it resolves "latest" from the repository's
-// tags with git, then checks which known asset names exist for that tag.
-func releaseByProbing(tag string) (release, error) {
+// probeAssets finds which known asset names exist for tag without the API.
+func probeAssets(tag string) release {
 	rel := release{TagName: tag}
-	if tag == "latest" {
-		out, err := exec.Command("git", "ls-remote", "--tags", "https://github.com/ggml-org/llama.cpp", "refs/tags/b*").Output()
-		if err != nil {
-			return rel, fmt.Errorf("could not list llama.cpp tags (is git installed?): %w; pass -tag bNNNN", err)
-		}
-		best := 0
-		for _, line := range strings.Split(string(out), "\n") {
-			ref := line[strings.LastIndex(line, "/")+1:]
-			if n, err := strconv.Atoi(strings.TrimPrefix(ref, "b")); err == nil && strings.HasPrefix(ref, "b") && n > best {
-				best = n
-			}
-		}
-		if best == 0 {
-			return rel, errors.New("no llama.cpp release tags found; pass -tag bNNNN")
-		}
-		rel.TagName = "b" + strconv.Itoa(best)
-	}
 	var names []string
 	for _, p := range []string{"ubuntu-x64", "ubuntu-vulkan-x64", "ubuntu-arm64", "macos-arm64", "macos-x64", "win-cpu-x64", "win-cpu-arm64", "win-vulkan-x64"} {
 		for _, ext := range []string{".tar.gz", ".zip"} {
-			names = append(names, "llama-"+rel.TagName+"-bin-"+p+ext)
+			names = append(names, "llama-"+tag+"-bin-"+p+ext)
 		}
 	}
 	for _, v := range []string{"12.4", "12.6", "12.8", "12.9"} {
-		names = append(names, "llama-"+rel.TagName+"-bin-win-cuda-"+v+"-x64.zip", "cudart-llama-bin-win-cuda-"+v+"-x64.zip")
+		names = append(names, "llama-"+tag+"-bin-win-cuda-"+v+"-x64.zip", "cudart-llama-bin-win-cuda-"+v+"-x64.zip")
 	}
 	client := &http.Client{
 		Timeout:       30 * time.Second,
 		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
-	base := "https://github.com/ggml-org/llama.cpp/releases/download/" + rel.TagName + "/"
+	base := "https://github.com/ggml-org/llama.cpp/releases/download/" + tag + "/"
 	for _, n := range names {
 		resp, err := client.Head(base + n)
 		if err != nil {
-			return rel, err
+			continue
 		}
 		resp.Body.Close()
 		if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusFound {
-			rel.Assets = append(rel.Assets, struct {
-				Name string `json:"name"`
-				URL  string `json:"browser_download_url"`
-				Size int64  `json:"size"`
-			}{Name: n, URL: base + n})
+			rel.Assets = append(rel.Assets, asset{Name: n, URL: base + n})
 		}
 	}
-	if len(rel.Assets) == 0 {
-		return rel, fmt.Errorf("no downloadable assets found for llama.cpp %s", rel.TagName)
-	}
-	return rel, nil
+	return rel
 }
 
 // installRuntime extracts archives and copies llama-server plus the shared
