@@ -42,19 +42,69 @@
     <div id="messages" class="messages">
       <div class="empty" id="chat-empty">
         <h2>What can I help you with?</h2>
-        <p class="muted">Drop a PDF, Word or text file anywhere to ask about it. Everything stays on this drive.</p>
+        <p class="muted">Paste a screenshot (⌘V / Ctrl+V), or drop a PDF, Word or text file anywhere to ask about it. Everything stays on this drive.</p>
       </div>
     </div>
     <div class="composer">
+      <div id="vision-note" class="note hidden"></div>
+      <div id="attachments" class="thumbs"></div>
       <div id="focus" class="chips"></div>
       <form id="chat-form">
+        <label class="button attach" title="Attach images or files">📎<input type="file" id="attach-input" multiple hidden></label>
         <textarea id="input" rows="1" placeholder="Ask anything…" autocomplete="off"></textarea>
         <button type="submit" class="primary" id="send" aria-label="Send">➤</button>
       </form>
       <div class="composer-row">
+        <select id="agent-select" title="Who are you talking to?" aria-label="Agent"><option value="">💬 Private AI</option></select>
         <label class="toggle"><input type="checkbox" id="use-docs" checked> Search my files</label>
         <button type="button" class="link" id="new-chat">New chat</button>
       </div>
+    </div>
+  </section>
+
+  <!-- Agents -->
+  <section id="view-agents" class="screen view hidden">
+    <div class="pane">
+      <div class="pane-head">
+        <h2>Agents</h2>
+        <button class="primary" id="agent-new">New agent</button>
+      </div>
+      <p class="muted">Agents are assistants with their own instructions, tools and documents. They run entirely on this drive and can't reach the internet.</p>
+      <div id="agent-form-wrap" class="hidden">
+        <form id="agent-form" class="card agent-form">
+          <h3 id="agent-form-title">New agent</h3>
+          <div class="row2">
+            <input id="agent-emoji" maxlength="4" placeholder="🤖" aria-label="Emoji" class="emoji-input">
+            <input id="agent-name" placeholder="Name, e.g. Contract Reviewer" required maxlength="60" aria-label="Name">
+          </div>
+          <input id="agent-desc" placeholder="Short description (optional)" maxlength="200" aria-label="Description">
+          <label class="field">Instructions
+            <textarea id="agent-instr" rows="6" placeholder="How should this agent behave? What should it focus on? What format should answers use?"></textarea>
+          </label>
+          <fieldset>
+            <legend>Tools it may use</legend>
+            <div id="agent-tools" class="checks"></div>
+          </fieldset>
+          <fieldset>
+            <legend>Documents it can see</legend>
+            <label class="radio"><input type="radio" name="knowledge" value="all" checked> All my files</label>
+            <label class="radio"><input type="radio" name="knowledge" value="selected"> Only selected files</label>
+            <label class="radio"><input type="radio" name="knowledge" value="none"> None</label>
+            <div id="agent-docs" class="checks hidden"></div>
+          </fieldset>
+          <label class="field">Creativity <output id="agent-temp-out"></output>
+            <input type="range" id="agent-temp" min="0" max="1.2" step="0.1" value="0.6">
+          </label>
+          <p id="agent-error" class="error"></p>
+          <div class="actions">
+            <button type="submit" class="primary">Save agent</button>
+            <button type="button" id="agent-cancel">Cancel</button>
+          </div>
+        </form>
+      </div>
+      <ul id="agent-list" class="list"></ul>
+      <h3>Start from a template</h3>
+      <div id="agent-templates" class="templates"></div>
     </div>
   </section>
 
@@ -111,6 +161,7 @@
 
   <nav class="tabs hidden" id="tabs">
     <button data-view="chat" class="active">Chat</button>
+    <button data-view="agents">Agents</button>
     <button data-view="files">Files</button>
     <button data-view="memory">Memory</button>
     <button data-view="chats">Chats</button>

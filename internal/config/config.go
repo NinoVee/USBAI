@@ -26,6 +26,11 @@ type Model struct {
 	SHA256   string `json:"sha256,omitempty"`
 	MinRAMGB int    `json:"min_ram_gb,omitempty"`
 	Context  int    `json:"context,omitempty"`
+	// MMProj is the multimodal projector that lets a chat model see images
+	// (drive-relative), with its download URL for drivetool.
+	MMProj       string `json:"mmproj,omitempty"`
+	MMProjURL    string `json:"mmproj_url,omitempty"`
+	MMProjSHA256 string `json:"mmproj_sha256,omitempty"`
 	// Prefixes some embedding models (e.g. nomic-embed) expect.
 	QueryPrefix    string `json:"query_prefix,omitempty"`
 	DocumentPrefix string `json:"document_prefix,omitempty"`
@@ -108,6 +113,15 @@ func (c Config) ModelsByRole(role string) []Model {
 		}
 	}
 	return out
+}
+
+// Vision reports whether the model's image projector is on the drive.
+func (c Config) Vision(m Model) bool {
+	if m.MMProj == "" {
+		return false
+	}
+	st, err := os.Stat(c.Path(m.MMProj))
+	return err == nil && !st.IsDir() && st.Size() > 0
 }
 
 // Present reports whether the model file exists on the drive.

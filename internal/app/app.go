@@ -57,6 +57,8 @@ type App struct {
 	index  *rag.Index
 	docs   map[string]DocMeta
 	memory []MemoryItem
+	// agentsMu serializes read-modify-write of the agents list.
+	agentsMu sync.Mutex
 
 	// Shutdown is closed when the user asks to shut down from the UI.
 	Shutdown     chan struct{}
@@ -149,6 +151,10 @@ func (a *App) StartEngines() {
 // startServer tries each runtime candidate (GPU builds first, CPU last) and
 // returns the first that loads the model.
 func (a *App) startServer(m config.Model, embedding bool) (*llama.Server, string, error) {
+	mmproj := ""
+	if !embedding && a.cfg.Vision(m) {
+		mmproj = a.cfg.Path(m.MMProj)
+	}
 	var errs []error
 	tried := false
 	for _, name := range a.host.RuntimeCandidates() {
@@ -174,6 +180,7 @@ func (a *App) startServer(m config.Model, embedding bool) (*llama.Server, string
 			GPULayers:  gpu,
 			Threads:    a.cfg.Threads,
 			Embedding:  embedding,
+			MMProj:     mmproj,
 			ExtraArgs:  a.cfg.ExtraArgs,
 			LogPrefix:  prefix + "/" + name,
 			Log:        a.log,

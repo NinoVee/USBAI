@@ -197,7 +197,7 @@ func TestEndToEnd(t *testing.T) {
 	if !strings.Contains(c.Messages[3].Content, "Got 4 messages") {
 		t.Fatalf("history not sent: %q", c.Messages[3].Content)
 	}
-	if !strings.Contains(a.systemPrompt(), "My name is Sam.") {
+	if !strings.Contains(a.systemPrompt(nil), "My name is Sam.") {
 		t.Fatal("memory missing from system prompt")
 	}
 

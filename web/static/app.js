@@ -78,7 +78,14 @@ const state = {
   focus: new Map(), // doc id -> name
   busy: false,
   view: "chat",
+  agentId: "",     // agent for new chats ("" = plain Private AI)
+  agents: [],
+  catalog: null,   // tools + templates
+  images: [],      // pending attachments as data: URLs
 };
+
+const MAX_IMAGES = 4;
+const MAX_IMAGE_SIDE = 1280; // keeps image tokens (and CPU time) reasonable
 
 // ---- Status / engine pill ----
 
@@ -120,6 +127,7 @@ async function refreshStatus() {
 // take a minute or two on first start.
 const modelReady = () => state.status && state.status.chat_state === "ready";
 function updateComposer() {
+  renderVisionNote();
   const ready = modelReady();
   $("send").disabled = state.busy || !ready;
   $("input").placeholder = ready ? "Ask anything…"
@@ -163,6 +171,7 @@ $("lock-form").addEventListener("submit", async (e) => {
     $("lock").classList.add("hidden");
     $("tabs").classList.remove("hidden");
     await refreshStatus();
+    await loadAgents();
     newChat();
     show("chat");
   } catch (err) {
@@ -179,6 +188,7 @@ function show(view) {
   document.querySelectorAll(".view").forEach((v) => v.classList.add("hidden"));
   $("view-" + view).classList.remove("hidden");
   document.querySelectorAll("#tabs button").forEach((b) => b.classList.toggle("active", b.dataset.view === view));
+  if (view === "agents") renderAgents();
   if (view === "files") renderDocs();
   if (view === "memory") renderMemory();
   if (view === "chats") renderChats();
@@ -193,14 +203,24 @@ function newChat() {
   state.chatId = null;
   state.focus.clear();
   renderFocus();
-  $("messages").replaceChildren($("chat-empty") || emptyState());
-  $("chat-empty").classList.remove("hidden");
+  $("messages").replaceChildren(emptyState());
+  $("agent-select").disabled = false;
 }
 function emptyState() {
+  const ag = currentAgent();
+  if (ag) {
+    return el("div", { class: "empty", id: "chat-empty" },
+      el("div", { class: "agent-emoji", style: "font-size:40px;width:auto" }, ag.emoji),
+      el("h2", {}, ag.name),
+      el("p", { class: "muted" }, ag.description || "Ask me anything."),
+      ag.tools && ag.tools.length ? el("p", { class: "muted" }, "Tools: " + ag.tools.map(toolLabel).join(", ")) : null);
+  }
   return el("div", { class: "empty", id: "chat-empty" },
     el("h2", {}, "What can I help you with?"),
-    el("p", { class: "muted" }, "Drop a PDF, Word or text file anywhere to ask about it. Everything stays on this drive."));
+    el("p", { class: "muted" }, "Paste a screenshot (⌘V / Ctrl+V), or drop a PDF, Word or text file anywhere to ask about it. Everything stays on this drive."));
 }
+const currentAgent = () => state.agents.find((a) => a.id === state.agentId);
+const toolLabel = (id) => (state.catalog && (state.catalog.tools.find((t) => t.id === id) || {}).label) || id;
 $("new-chat").addEventListener("click", () => { newChat(); $("input").focus(); });
 
 function renderFocus() {
@@ -221,12 +241,44 @@ function sourcesEl(sources) {
   return el("details", { class: "sources" }, el("summary", {}, `Sources (${sources.length})`), list);
 }
 
-function addMessage(role, content, sources) {
+function imagesEl(srcs) {
+  if (!srcs || !srcs.length) return null;
+  return el("div", { class: "msg-images" }, ...srcs.map((src) =>
+    el("img", { src, alt: "Attached image", onclick: () => window.open(src, "_blank", "noopener") })));
+}
+
+function stepsEl(steps) {
+  const list = el("ol");
+  const box = el("details", { class: "steps" }, el("summary", {}, "🔧 Tools used"), list);
+  box._list = list;
+  for (const st of steps || []) addStep(box, st, true);
+  return box;
+}
+function addStep(box, st, done) {
+  let args = st.args || "";
+  try { const o = JSON.parse(args); args = Object.values(o).join(", "); } catch {}
+  const li = el("li", {}, el("strong", {}, toolLabel(st.tool)), args ? ": " : "", args ? el("code", {}, args) : null);
+  if (done && st.result) li.append(" → " + st.result);
+  box._list.append(li);
+  box.querySelector("summary").textContent = `🔧 Tools used (${box._list.children.length})`;
+  return li;
+}
+
+function addMessage(role, content, sources, images, steps, agentName) {
   const empty = $("chat-empty");
   if (empty) empty.classList.add("hidden");
   const body = el("div", { class: "body" });
   if (role === "assistant") body.innerHTML = markdown(content); else body.textContent = content;
-  const msg = el("div", { class: "msg " + role }, body);
+  const msg = el("div", { class: "msg " + role });
+  if (role === "assistant" && agentName) msg.append(el("div", { class: "agent-label" }, agentName));
+  const imgs = imagesEl(images);
+  if (imgs) msg.append(imgs);
+  if (role === "assistant") {
+    msg._steps = stepsEl(steps);
+    if (!steps || !steps.length) msg._steps.classList.add("hidden");
+    msg.append(msg._steps);
+  }
+  msg.append(body);
   if (role === "assistant") {
     const src = sourcesEl(sources);
     if (src) msg.append(src);
@@ -240,11 +292,16 @@ function addMessage(role, content, sources) {
 }
 
 async function send(text) {
-  if (state.busy || !text.trim()) return;
+  const images = state.images.slice();
+  if (state.busy || (!text.trim() && !images.length)) return;
   state.busy = true;
   $("send").disabled = true;
-  addMessage("user", text);
-  const msg = addMessage("assistant", "");
+  state.images = [];
+  renderAttachments();
+  const ag = currentAgent();
+  addMessage("user", text, null, images);
+  const msg = addMessage("assistant", "", null, null, null, ag ? `${ag.emoji} ${ag.name}` : "");
+  $("agent-select").disabled = true; // a chat keeps its agent
   const body = msg.querySelector(".body");
   body.classList.add("typing");
   let raw = "";
@@ -254,7 +311,9 @@ async function send(text) {
       headers: { ...H, "Content-Type": "application/json" },
       body: JSON.stringify({
         chat_id: state.chatId,
+        agent_id: state.chatId ? "" : state.agentId,
         message: text,
+        images,
         use_docs: $("use-docs").checked,
         doc_ids: [...state.focus.keys()],
       }),
@@ -278,6 +337,13 @@ async function send(text) {
           state.chatId = data.chat_id;
           const src = sourcesEl(data.sources);
           if (src) msg.insertBefore(src, msg.querySelector(".msg-tools"));
+        } else if (ev === "tool") {
+          msg._steps.classList.remove("hidden");
+          msg._pending = addStep(msg._steps, data, false);
+          if (!raw) body.textContent = `Using ${toolLabel(data.tool)}…`;
+        } else if (ev === "tool_result") {
+          if (msg._pending) msg._pending.append(" → " + data.result);
+          if (!raw) body.textContent = "Thinking…";
         } else if (ev === "thinking") {
           if (!raw) body.textContent = "Thinking…";
         } else if (ev === "token") {
@@ -303,7 +369,9 @@ async function send(text) {
 $("chat-form").addEventListener("submit", (e) => {
   e.preventDefault();
   if (!modelReady() || state.busy) return; // keep the typed text until the model is ready
+  if (state.images.length && !(state.status && state.status.chat_vision)) return; // see the vision note
   const text = $("input").value;
+  if (!text.trim() && !state.images.length) return;
   $("input").value = "";
   autosize();
   send(text);
@@ -323,11 +391,101 @@ $("input").addEventListener("input", autosize);
 
 async function openChat(id) {
   const chat = await api("GET", "/api/chats/" + id);
+  state.agentId = chat.agent_id || "";
+  $("agent-select").value = state.agentId;
   newChat();
   state.chatId = chat.id;
-  for (const m of chat.messages || []) addMessage(m.role, m.content, m.sources);
+  const ag = currentAgent();
+  const label = chat.agent_id ? (ag ? `${ag.emoji} ${ag.name}` : "Deleted agent") : "";
+  for (const m of chat.messages || []) {
+    addMessage(m.role, m.content, m.sources, (m.images || []).map((i) => "/api/images/" + i), m.steps, label);
+  }
+  $("agent-select").disabled = true;
   show("chat");
 }
+
+// ---- Images ----
+
+// Downscale in the browser: a full-resolution screenshot costs the model
+// several thousand tokens; 1280px keeps text legible at a fraction.
+async function toDataURL(file) {
+  const bmp = await createImageBitmap(file);
+  const scale = Math.min(1, MAX_IMAGE_SIDE / Math.max(bmp.width, bmp.height));
+  const c = document.createElement("canvas");
+  c.width = Math.round(bmp.width * scale);
+  c.height = Math.round(bmp.height * scale);
+  const ctx = c.getContext("2d");
+  ctx.fillStyle = "#fff"; // flatten transparency for JPEG
+  ctx.fillRect(0, 0, c.width, c.height);
+  ctx.drawImage(bmp, 0, 0, c.width, c.height);
+  bmp.close && bmp.close();
+  return c.toDataURL("image/jpeg", 0.9);
+}
+
+async function attachImages(files) {
+  for (const f of files) {
+    if (state.images.length >= MAX_IMAGES) {
+      addMessage("assistant", `⚠ You can attach up to ${MAX_IMAGES} images per message.`);
+      break;
+    }
+    try {
+      state.images.push(await toDataURL(f));
+    } catch {
+      addMessage("assistant", `⚠ Could not read ${f.name || "that image"}.`);
+    }
+  }
+  renderAttachments();
+  $("input").focus();
+}
+
+function renderAttachments() {
+  $("attachments").replaceChildren(...state.images.map((src, i) =>
+    el("div", { class: "thumb" }, el("img", { src, alt: "Attachment" }),
+      el("button", { type: "button", "aria-label": "Remove image", onclick: () => { state.images.splice(i, 1); renderAttachments(); } }, "×"))));
+  renderVisionNote();
+}
+
+function renderVisionNote() {
+  const note = $("vision-note");
+  const st = state.status;
+  if (!state.images.length || !st || st.chat_vision) { note.classList.add("hidden"); return; }
+  note.classList.remove("hidden");
+  const vision = (st.models || []).find((m) => m.present && m.vision);
+  if (vision) {
+    note.replaceChildren(el("span", {}, `${st.chat_model || "This model"} can't see images. ${vision.name} can.`),
+      el("button", { type: "button", class: "primary", onclick: async () => {
+        await api("POST", "/api/models/select", { id: vision.id });
+        refreshStatus();
+      } }, "Switch model"));
+  } else {
+    note.replaceChildren(el("span", {}, "None of the models on this drive can see images. Add a vision model such as Qwen3 VL (see README)."));
+  }
+}
+
+// Split dropped/pasted/attached files: images go to the message, others to Files.
+function takeFiles(files) {
+  const imgs = files.filter((f) => f.type.startsWith("image/"));
+  const docs = files.filter((f) => !f.type.startsWith("image/"));
+  if (imgs.length) attachImages(imgs);
+  if (docs.length) {
+    upload(docs, true);
+    addMessage("assistant", `Adding ${docs.map((f) => f.name).join(", ")}… Ask your question when the file chip appears below.`);
+  }
+}
+
+$("attach-input").addEventListener("change", (e) => {
+  takeFiles([...e.target.files]);
+  e.target.value = "";
+});
+
+document.addEventListener("paste", (e) => {
+  if (!$("lock").classList.contains("hidden")) return;
+  const files = [...(e.clipboardData?.files || [])];
+  if (!files.length) return; // plain text pastes normally
+  e.preventDefault();
+  if (state.view !== "chat") show("chat");
+  takeFiles(files);
+});
 
 // ---- Files ----
 
@@ -396,9 +554,117 @@ window.addEventListener("drop", (e) => {
   if (!$("lock").classList.contains("hidden")) return;
   const files = [...(e.dataTransfer?.files || [])];
   if (!files.length) return;
-  const toChat = state.view === "chat";
-  upload(files, toChat);
-  if (toChat) addMessage("assistant", `Adding ${files.map((f) => f.name).join(", ")}… Ask your question when the file chip appears below.`);
+  if (state.view === "chat") takeFiles(files);
+  else upload(files, false);
+});
+
+// ---- Agents ----
+
+const agentPrefix = (id) => { const a = id && state.agents.find((x) => x.id === id); return a ? a.emoji + " " : ""; };
+
+async function loadAgents() {
+  try {
+    state.agents = (await api("GET", "/api/agents")) || [];
+    if (!state.catalog) state.catalog = await api("GET", "/api/agents/catalog");
+  } catch { return; }
+  if (state.agentId && !currentAgent()) state.agentId = "";
+  const sel = $("agent-select");
+  sel.replaceChildren(el("option", { value: "" }, "💬 Private AI"),
+    ...state.agents.map((a) => el("option", { value: a.id }, `${a.emoji} ${a.name}`)));
+  sel.value = state.agentId;
+}
+
+$("agent-select").addEventListener("change", (e) => {
+  state.agentId = e.target.value;
+  newChat();
+  $("input").focus();
+});
+
+function chatWith(id) {
+  state.agentId = id;
+  $("agent-select").value = id;
+  newChat();
+  show("chat");
+}
+
+async function renderAgents() {
+  await loadAgents();
+  const list = $("agent-list");
+  list.replaceChildren();
+  if (!state.agents.length) list.append(el("li", { class: "muted" }, "No agents yet. Create one, or start from a template below."));
+  for (const a of state.agents) {
+    list.append(el("li", {},
+      el("div", { class: "agent-emoji" }, a.emoji),
+      el("div", { class: "grow" }, a.name,
+        el("div", { class: "sub" }, [a.description, (a.tools || []).length ? "Tools: " + a.tools.map(toolLabel).join(", ") : "No tools",
+          { all: "All files", selected: `${(a.doc_ids || []).length} selected file(s)`, none: "No files" }[a.knowledge] || ""].filter(Boolean).join(" · "))),
+      el("button", { class: "primary", onclick: () => chatWith(a.id) }, "Chat"),
+      el("button", { onclick: () => editAgent(a) }, "Edit"),
+      el("button", { class: "danger", onclick: async () => {
+        if (!confirm(`Delete the agent ${a.name}? Its past chats are kept.`)) return;
+        await api("DELETE", "/api/agents/" + a.id);
+        if (state.agentId === a.id) { state.agentId = ""; newChat(); }
+        renderAgents();
+      } }, "Delete")));
+  }
+  $("agent-templates").replaceChildren(...(state.catalog ? state.catalog.templates : []).map((t) =>
+    el("button", { type: "button", title: t.description, onclick: () => editAgent({ ...t, id: "" }) }, `${t.emoji} ${t.name}`)));
+}
+
+let editingAgent = null;
+async function editAgent(a) {
+  editingAgent = a || { name: "", emoji: "🤖", description: "", instructions: "", tools: [], knowledge: "all", doc_ids: [], temperature: 0.6 };
+  const ag = editingAgent;
+  $("agent-form-title").textContent = ag.id ? "Edit agent" : "New agent";
+  $("agent-emoji").value = ag.emoji || "🤖";
+  $("agent-name").value = ag.name || "";
+  $("agent-desc").value = ag.description || "";
+  $("agent-instr").value = ag.instructions || "";
+  $("agent-temp").value = ag.temperature ?? 0.6;
+  $("agent-temp-out").textContent = $("agent-temp").value;
+  $("agent-error").textContent = "";
+  $("agent-tools").replaceChildren(...(state.catalog ? state.catalog.tools : []).map((t) =>
+    el("label", {}, el("input", { type: "checkbox", value: t.id, ...((ag.tools || []).includes(t.id) ? { checked: "" } : {}) }),
+      el("span", {}, t.label, el("small", {}, t.description)))));
+  document.querySelectorAll("input[name=knowledge]").forEach((r) => { r.checked = r.value === (ag.knowledge || "all"); });
+  const docs = (await api("GET", "/api/docs")) || [];
+  $("agent-docs").replaceChildren(...(docs.length ? docs.map((d) =>
+    el("label", {}, el("input", { type: "checkbox", value: d.id, ...((ag.doc_ids || []).includes(d.id) ? { checked: "" } : {}) }), el("span", {}, d.name)))
+    : [el("span", { class: "muted" }, "No files yet — add some in Files.")]));
+  syncKnowledge();
+  $("agent-form-wrap").classList.remove("hidden");
+  $("agent-name").focus();
+  $("agent-form-wrap").scrollIntoView({ block: "start", behavior: "smooth" });
+}
+function syncKnowledge() {
+  const k = document.querySelector("input[name=knowledge]:checked").value;
+  $("agent-docs").classList.toggle("hidden", k !== "selected");
+}
+document.querySelectorAll("input[name=knowledge]").forEach((r) => r.addEventListener("change", syncKnowledge));
+$("agent-temp").addEventListener("input", () => { $("agent-temp-out").textContent = $("agent-temp").value; });
+$("agent-new").addEventListener("click", () => editAgent(null));
+$("agent-cancel").addEventListener("click", () => $("agent-form-wrap").classList.add("hidden"));
+$("agent-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const checked = (sel) => [...document.querySelectorAll(sel + " input:checked")].map((i) => i.value);
+  const body = {
+    ...(editingAgent || {}),
+    emoji: $("agent-emoji").value.trim(),
+    name: $("agent-name").value.trim(),
+    description: $("agent-desc").value.trim(),
+    instructions: $("agent-instr").value,
+    tools: checked("#agent-tools"),
+    knowledge: document.querySelector("input[name=knowledge]:checked").value,
+    doc_ids: checked("#agent-docs"),
+    temperature: parseFloat($("agent-temp").value),
+  };
+  try {
+    await api("POST", "/api/agents", body);
+    $("agent-form-wrap").classList.add("hidden");
+    renderAgents();
+  } catch (err) {
+    $("agent-error").textContent = err.message;
+  }
 });
 
 // ---- Memory ----
@@ -431,7 +697,7 @@ async function renderChats() {
   if (!chats.length) list.append(el("li", { class: "muted" }, "No conversations yet."));
   for (const c of chats) {
     list.append(el("li", {},
-      el("div", { class: "grow" }, c.title, el("div", { class: "sub" }, fmtDate(c.updated))),
+      el("div", { class: "grow" }, agentPrefix(c.agent_id) + c.title, el("div", { class: "sub" }, fmtDate(c.updated))),
       el("button", { onclick: () => openChat(c.id) }, "Open"),
       el("button", { class: "danger", onclick: async () => {
         if (!confirm("Delete this conversation?")) return;
@@ -455,7 +721,7 @@ function renderSettings() {
     const row = el("div", { class: "row" + (m.active ? " active" : "") },
       el("div", { class: "grow" }, m.name,
         el("div", { class: "sub" }, !m.present ? "Not on this drive" :
-          `Needs ~${m.min_ram_gb} GB RAM` + (tooBig ? " — may be slow or fail on this computer" : "") +
+          `Needs ~${m.min_ram_gb} GB RAM` + (m.vision ? " · sees images" : "") + (tooBig ? " — may be slow or fail on this computer" : "") +
           (m.active ? ` · ${st.chat_state === "ready" ? "active" : st.chat_state}` : ""))));
     if (m.present && !m.active) {
       row.append(el("button", { onclick: async () => { await api("POST", "/api/models/select", { id: m.id }); refreshStatus(); } }, "Use"));
@@ -505,5 +771,5 @@ const poll = setInterval(refreshStatus, 3000);
   const st = await refreshStatus();
   if (!st) return;
   if (st.locked) showLock();
-  else { $("tabs").classList.remove("hidden"); show("chat"); }
+  else { await loadAgents(); newChat(); $("tabs").classList.remove("hidden"); show("chat"); }
 })();

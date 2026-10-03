@@ -44,10 +44,12 @@ type MemoryItem struct {
 
 // ChatMessage is one turn of a stored conversation.
 type ChatMessage struct {
-	Role    string    `json:"role"`
-	Content string    `json:"content"`
-	Sources []Source  `json:"sources,omitempty"`
-	Time    time.Time `json:"time"`
+	Role    string     `json:"role"`
+	Content string     `json:"content"`
+	Sources []Source   `json:"sources,omitempty"`
+	Images  []string   `json:"images,omitempty"` // vault image ids
+	Steps   []ToolStep `json:"steps,omitempty"`  // agent tool use
+	Time    time.Time  `json:"time"`
 }
 
 // Source is a document excerpt used to answer.
@@ -62,6 +64,7 @@ type Source struct {
 type Chat struct {
 	ID       string        `json:"id"`
 	Title    string        `json:"title"`
+	AgentID  string        `json:"agent_id,omitempty"`
 	Created  time.Time     `json:"created"`
 	Updated  time.Time     `json:"updated"`
 	Messages []ChatMessage `json:"messages"`
@@ -387,6 +390,7 @@ func (a *App) Forget(id string) error {
 // ChatSummary is a chat without its messages.
 type ChatSummary struct {
 	ID      string    `json:"id"`
+	AgentID string    `json:"agent_id,omitempty"`
 	Title   string    `json:"title"`
 	Updated time.Time `json:"updated"`
 }
@@ -403,7 +407,7 @@ func (a *App) Chats() ([]ChatSummary, error) {
 		if err := v.GetJSON(name, &c); err != nil {
 			continue
 		}
-		out = append(out, ChatSummary{ID: c.ID, Title: c.Title, Updated: c.Updated})
+		out = append(out, ChatSummary{ID: c.ID, AgentID: c.AgentID, Title: c.Title, Updated: c.Updated})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Updated.After(out[j].Updated) })
 	return out, nil
@@ -433,6 +437,14 @@ func (a *App) DeleteChat(id string) error {
 	v, err := a.unlocked()
 	if err != nil {
 		return err
+	}
+	var c Chat
+	if err := v.GetJSON("chats/"+id, &c); err == nil {
+		for _, m := range c.Messages {
+			for _, img := range m.Images {
+				v.Delete("images/" + img)
+			}
+		}
 	}
 	return v.Delete("chats/" + id)
 }

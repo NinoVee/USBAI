@@ -63,6 +63,7 @@ func main() {
 	drive := fs.String("drive", "dist/PRIVATE-AI", "drive root containing config.json")
 	only := fs.String("only", "", "comma-separated runtime folders or model ids to fetch (default: all)")
 	tag := fs.String("tag", "latest", "llama.cpp release tag, e.g. b6500")
+	template := fs.String("template", "drive/config.json", "config template for sync-config")
 	fs.Parse(args)
 
 	var err error
@@ -73,6 +74,8 @@ func main() {
 		err = fetchModels(*drive, splitList(*only))
 	case "check":
 		err = check(*drive)
+	case "sync-config":
+		err = syncConfig(*drive, *template)
 	default:
 		usage()
 	}
@@ -83,7 +86,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: drivetool fetch-runtime|fetch-models|check -drive DIR [-only a,b] [-tag bNNNN]")
+	fmt.Fprintln(os.Stderr, "usage: drivetool fetch-runtime|fetch-models|sync-config|check -drive DIR [-only a,b] [-tag bNNNN]")
 	os.Exit(2)
 }
 
@@ -527,15 +530,21 @@ func fetchModels(drive string, only map[string]bool) error {
 		}
 		if cfg.Present(m) {
 			fmt.Printf("%s: already present\n", m.ID)
-			continue
-		}
-		if m.URL == "" {
+		} else if m.URL == "" {
 			fmt.Printf("%s: no url in config.json, skipping\n", m.ID)
 			continue
+		} else {
+			fmt.Printf("%s: downloading %s\n", m.ID, m.Name)
+			if err := download(m.URL, cfg.Path(m.File), m.SHA256); err != nil {
+				return fmt.Errorf("%s: %w", m.ID, err)
+			}
 		}
-		fmt.Printf("%s: downloading %s\n", m.ID, m.Name)
-		if err := download(m.URL, cfg.Path(m.File), m.SHA256); err != nil {
-			return fmt.Errorf("%s: %w", m.ID, err)
+		// Vision models also need their image projector.
+		if m.MMProj != "" && m.MMProjURL != "" && !cfg.Vision(m) {
+			fmt.Printf("%s: downloading image projector\n", m.ID)
+			if err := download(m.MMProjURL, cfg.Path(m.MMProj), m.MMProjSHA256); err != nil {
+				return fmt.Errorf("%s mmproj: %w", m.ID, err)
+			}
 		}
 	}
 	return nil
@@ -627,6 +636,83 @@ func (p *progress) Write(b []byte) (int, error) {
 	return len(b), nil
 }
 
+// ---- Config sync ----
+
+// syncConfig adds models from the template that an existing drive's
+// config.json lacks (e.g. after an update adds vision models), without
+// touching the user's other settings or their own model entries.
+func syncConfig(drive, template string) error {
+	path := filepath.Join(drive, config.FileName)
+	cur, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	tmpl, err := os.ReadFile(template)
+	if err != nil {
+		return err
+	}
+	var curMap map[string]json.RawMessage
+	if err := json.Unmarshal(cur, &curMap); err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
+	var curModels, tmplModels []map[string]any
+	json.Unmarshal(curMap["models"], &curModels)
+	var t struct {
+		Models []map[string]any `json:"models"`
+	}
+	if err := json.Unmarshal(tmpl, &t); err != nil {
+		return fmt.Errorf("%s: %w", template, err)
+	}
+	tmplModels = t.Models
+
+	byID := map[string]map[string]any{}
+	for _, m := range curModels {
+		byID[fmt.Sprint(m["id"])] = m
+	}
+	// Template order first (it encodes model preference), keeping the
+	// user's version of each existing entry; then the user's own models.
+	var merged []map[string]any
+	seen := map[string]bool{}
+	var added []string
+	for _, m := range tmplModels {
+		id := fmt.Sprint(m["id"])
+		seen[id] = true
+		if old, ok := byID[id]; ok {
+			// Keep the user's entry but pick up newly introduced fields.
+			for k, v := range m {
+				if _, has := old[k]; !has {
+					old[k] = v
+				}
+			}
+			merged = append(merged, old)
+		} else {
+			merged = append(merged, m)
+			added = append(added, id)
+		}
+	}
+	for _, m := range curModels {
+		if !seen[fmt.Sprint(m["id"])] {
+			merged = append(merged, m)
+		}
+	}
+	if len(added) == 0 {
+		fmt.Println("config.json already has every model")
+	}
+	b, _ := json.Marshal(merged)
+	curMap["models"] = b
+	out, err := json.MarshalIndent(curMap, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(path, append(out, '\n'), 0o644); err != nil {
+		return err
+	}
+	if len(added) > 0 {
+		fmt.Printf("config.json: added %s\n", strings.Join(added, ", "))
+	}
+	return nil
+}
+
 // ---- Check ----
 
 func check(drive string) error {
@@ -649,6 +735,13 @@ func check(drive string) error {
 		if cfg.Present(m) {
 			st, _ := os.Stat(cfg.Path(m.File))
 			mark = fmt.Sprintf("ok (%.1f GB)", float64(st.Size())/(1<<30))
+		}
+		if m.MMProj != "" {
+			if cfg.Vision(m) {
+				mark += ", sees images"
+			} else if cfg.Present(m) {
+				mark += ", image projector missing"
+			}
 		}
 		fmt.Printf("  %-12s %-10s %s\n", m.ID, m.Role, mark)
 	}

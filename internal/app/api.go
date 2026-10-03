@@ -71,6 +71,42 @@ func (a *App) Handler(ui fs.FS, port int) http.Handler {
 		respondErr(w, a.DeleteDocument(r.PathValue("id")))
 	})
 
+	mux.HandleFunc("GET /api/images/{id}", func(w http.ResponseWriter, r *http.Request) {
+		if err := validID(r.PathValue("id")); err != nil {
+			httpError(w, err)
+			return
+		}
+		data, ctype, err := a.Image(r.PathValue("id"))
+		if err != nil {
+			httpError(w, err)
+			return
+		}
+		w.Header().Set("Content-Type", ctype)
+		w.Write(data)
+	})
+
+	mux.HandleFunc("GET /api/agents", func(w http.ResponseWriter, r *http.Request) {
+		respond(w)(a.Agents())
+	})
+	mux.HandleFunc("GET /api/agents/catalog", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, map[string]any{"tools": ToolInfos(), "templates": AgentTemplates})
+	})
+	mux.HandleFunc("POST /api/agents", func(w http.ResponseWriter, r *http.Request) {
+		var ag Agent
+		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&ag); err != nil {
+			httpError(w, err)
+			return
+		}
+		respond(w)(a.SaveAgent(ag))
+	})
+	mux.HandleFunc("DELETE /api/agents/{id}", func(w http.ResponseWriter, r *http.Request) {
+		if err := validID(r.PathValue("id")); err != nil {
+			httpError(w, err)
+			return
+		}
+		respondErr(w, a.DeleteAgent(r.PathValue("id")))
+	})
+
 	mux.HandleFunc("GET /api/memory", func(w http.ResponseWriter, r *http.Request) {
 		respond(w)(a.Memory())
 	})
@@ -130,6 +166,7 @@ type modelInfo struct {
 	Present  bool   `json:"present"`
 	MinRAMGB int    `json:"min_ram_gb"`
 	Active   bool   `json:"active"`
+	Vision   bool   `json:"vision"`
 }
 
 func (a *App) handleStatus(w http.ResponseWriter, r *http.Request) {
@@ -138,6 +175,7 @@ func (a *App) handleStatus(w http.ResponseWriter, r *http.Request) {
 		"chat_state":    a.chatState,
 		"chat_error":    a.chatErr,
 		"chat_model":    a.chatModel.Name,
+		"chat_vision":   a.chatModel.ID != "" && a.cfg.Vision(a.chatModel),
 		"chat_runtime":  a.chatRuntime,
 		"embed_state":   a.embedState,
 		"embed_model":   a.embedModel.Name,
@@ -150,7 +188,7 @@ func (a *App) handleStatus(w http.ResponseWriter, r *http.Request) {
 
 	var models []modelInfo
 	for _, m := range a.cfg.ModelsByRole("chat") {
-		models = append(models, modelInfo{ID: m.ID, Name: m.Name, Present: a.cfg.Present(m), MinRAMGB: m.MinRAMGB, Active: m.ID == active})
+		models = append(models, modelInfo{ID: m.ID, Name: m.Name, Present: a.cfg.Present(m), MinRAMGB: m.MinRAMGB, Active: m.ID == active, Vision: a.cfg.Vision(m)})
 	}
 	st["models"] = models
 	st["host"] = a.host
@@ -301,15 +339,17 @@ func (s sseEvents) send(event string, v any) error {
 	return nil
 }
 
-func (s sseEvents) Meta(chatID string, sources []Source) error {
-	return s.send("meta", map[string]any{"chat_id": chatID, "sources": sources})
+func (s sseEvents) Meta(chatID string, sources []Source, images []string) error {
+	return s.send("meta", map[string]any{"chat_id": chatID, "sources": sources, "images": images})
 }
-func (s sseEvents) Thinking() error         { return s.send("thinking", map[string]any{}) }
-func (s sseEvents) Token(text string) error { return s.send("token", map[string]string{"text": text}) }
+func (s sseEvents) ToolCall(t ToolStep) error   { return s.send("tool", t) }
+func (s sseEvents) ToolResult(t ToolStep) error { return s.send("tool_result", t) }
+func (s sseEvents) Thinking() error             { return s.send("thinking", map[string]any{}) }
+func (s sseEvents) Token(text string) error     { return s.send("token", map[string]string{"text": text}) }
 
 func (a *App) handleChat(w http.ResponseWriter, r *http.Request) {
 	var req ChatRequest
-	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&req); err != nil {
+	if err := json.NewDecoder(io.LimitReader(r.Body, (maxImages*maxImageBytes*4/3)+(1<<20))).Decode(&req); err != nil {
 		httpError(w, err)
 		return
 	}

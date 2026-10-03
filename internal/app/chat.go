@@ -14,32 +14,49 @@ import (
 // ChatRequest is a user turn from the UI.
 type ChatRequest struct {
 	ChatID  string   `json:"chat_id"`
+	AgentID string   `json:"agent_id"`
 	Message string   `json:"message"`
 	UseDocs bool     `json:"use_docs"`
 	DocIDs  []string `json:"doc_ids"` // focus documents; empty means search all
+	Images  []string `json:"images"`  // data: URLs (screenshots, photos)
 }
 
 // ChatEvents receives streamed progress for one turn.
 type ChatEvents interface {
-	Meta(chatID string, sources []Source) error
+	Meta(chatID string, sources []Source, images []string) error
 	Thinking() error
 	Token(text string) error
+	ToolCall(step ToolStep) error
+	ToolResult(step ToolStep) error
+}
+
+// ToolStep records one tool use by an agent, for display.
+type ToolStep struct {
+	Tool   string `json:"tool"`
+	Args   string `json:"args"`
+	Result string `json:"result,omitempty"`
 }
 
 const (
 	replyReserve   = 1024 // tokens kept free for the answer
 	retrievalTopK  = 6
 	excerptPreview = 240
+	imageTokens    = 1100 // rough cost of one downscaled image
+	maxImages      = 4
+	maxAgentSteps  = 6 // tool rounds before the agent must answer
 )
 
 func approxTokens(s string) int { return utf8.RuneCountInString(s)/4 + 1 }
 
-// Chat runs one turn: retrieve context, stream the model's answer, and save
-// the conversation to the vault.
+// Chat runs one turn: retrieve context, let the model (and an agent's tools)
+// work, stream the answer, and save the conversation to the vault.
 func (a *App) Chat(req ChatRequest, ev ChatEvents) error {
 	msg := strings.TrimSpace(req.Message)
-	if msg == "" {
+	if msg == "" && len(req.Images) == 0 {
 		return errors.New("empty message")
+	}
+	if msg == "" {
+		msg = "What is in this image?"
 	}
 	if _, err := a.unlocked(); err != nil {
 		return err
@@ -47,6 +64,20 @@ func (a *App) Chat(req ChatRequest, ev ChatEvents) error {
 	url, model, ready := a.chatEngine()
 	if !ready {
 		return errors.New("the AI model is still loading — try again in a moment")
+	}
+	if len(req.Images) > maxImages {
+		return fmt.Errorf("attach at most %d images per message", maxImages)
+	}
+	if len(req.Images) > 0 && !a.cfg.Vision(model) {
+		return errors.New("the current model can't see images — switch to a vision model (e.g. Qwen3 VL) in Settings")
+	}
+	images := make([]decodedImage, 0, len(req.Images))
+	for _, u := range req.Images {
+		img, err := decodeDataURL(u)
+		if err != nil {
+			return err
+		}
+		images = append(images, img)
 	}
 
 	var chat Chat
@@ -64,50 +95,97 @@ func (a *App) Chat(req ChatRequest, ev ChatEvents) error {
 		if r := []rune(title); len(r) > 60 {
 			title = string(r[:60]) + "…"
 		}
-		chat = Chat{ID: newID(), Title: title, Created: time.Now()}
+		chat = Chat{ID: newID(), Title: title, Created: time.Now(), AgentID: req.AgentID}
+	}
+
+	var agent *Agent
+	if chat.AgentID != "" {
+		ag, err := a.GetAgent(chat.AgentID)
+		if err != nil {
+			return errors.New("this chat's agent was deleted — start a new chat")
+		}
+		agent = ag
+	}
+	tools := toolDefs(agentTools(agent))
+	temperature := 0.6
+	if agent != nil {
+		temperature = agent.Temperature
 	}
 
 	ctxTokens := model.Context
 	if ctxTokens <= 0 {
 		ctxTokens = 4096
 	}
-	budget := ctxTokens - replyReserve
+	budget := ctxTokens - replyReserve - len(images)*imageTokens
 
-	system := a.systemPrompt()
-	budget -= approxTokens(system) + approxTokens(msg)
+	system := a.systemPrompt(agent)
+	budget -= approxTokens(system) + approxTokens(msg) + 150*len(tools)
 
+	// Prefetch document context unless the agent searches for itself.
 	docContext, sources := "", []Source(nil)
-	if req.UseDocs || len(req.DocIDs) > 0 {
-		docContext, sources = a.retrieve(msg, req.DocIDs, budget/2)
+	wantDocs := req.UseDocs || len(req.DocIDs) > 0
+	if agent != nil {
+		wantDocs = wantDocs && agent.Knowledge != "none" && !agent.HasTool("search_documents")
+	}
+	if wantDocs {
+		docIDs := req.DocIDs
+		if len(docIDs) == 0 && agent != nil && agent.Knowledge == "selected" {
+			docIDs = agent.DocIDs
+		}
+		docContext, sources = a.retrieve(msg, docIDs, budget/2)
 		budget -= approxTokens(docContext)
 	}
 
-	// Most recent history that fits the remaining budget.
+	// Most recent history that fits the remaining budget. Earlier images
+	// are not re-sent; a note keeps the conversation coherent.
 	var history []llama.Message
 	for i := len(chat.Messages) - 1; i >= 0; i-- {
 		m := chat.Messages[i]
-		cost := approxTokens(m.Content)
+		content := m.Content
+		if len(m.Images) > 0 {
+			content = fmt.Sprintf("[%d image(s) attached]\n%s", len(m.Images), content)
+		}
+		cost := approxTokens(content)
 		if cost > budget {
 			break
 		}
 		budget -= cost
-		history = append([]llama.Message{{Role: m.Role, Content: m.Content}}, history...)
+		history = append([]llama.Message{{Role: m.Role, Content: content}}, history...)
 	}
 
 	msgs := []llama.Message{{Role: "system", Content: system}}
 	msgs = append(msgs, history...)
-	user := msg
+	userText := msg
 	if docContext != "" {
-		user = "Document excerpts:\n\n" + docContext + "\n\n---\n\nQuestion: " + msg
+		userText = "Document excerpts:\n\n" + docContext + "\n\n---\n\nQuestion: " + msg
 	}
-	msgs = append(msgs, llama.Message{Role: "user", Content: user})
+	if len(images) > 0 {
+		parts := []llama.Part{{Type: "text", Text: userText}}
+		for _, img := range images {
+			parts = append(parts, llama.Part{Type: "image_url", ImageURL: &llama.ImageURL{URL: img.dataURL}})
+		}
+		msgs = append(msgs, llama.Message{Role: "user", Content: parts})
+	} else {
+		msgs = append(msgs, llama.Message{Role: "user", Content: userText})
+	}
 
-	if err := ev.Meta(chat.ID, sources); err != nil {
+	// Store images first so the chat can show them even if generation fails.
+	var imageIDs []string
+	for _, img := range images {
+		id, err := a.saveImage(img)
+		if err != nil {
+			return err
+		}
+		imageIDs = append(imageIDs, id)
+	}
+	if err := ev.Meta(chat.ID, sources, imageIDs); err != nil {
 		return err
 	}
+
 	var answer strings.Builder
+	var steps []ToolStep
 	thinking := false
-	err := llama.ChatStream(a.ctx, url, msgs, 0.6, func(d llama.Delta) error {
+	onDelta := func(d llama.Delta) error {
 		if d.Reasoning != "" && !thinking {
 			thinking = true
 			if err := ev.Thinking(); err != nil {
@@ -119,7 +197,56 @@ func (a *App) Chat(req ChatRequest, ev ChatEvents) error {
 		}
 		answer.WriteString(d.Content)
 		return ev.Token(d.Content)
-	})
+	}
+
+	var err error
+	done := map[string]string{} // tool+args -> result, to catch repeat calls
+	repeated := false
+	for step := 0; ; step++ {
+		opts := llama.ChatOptions{Temperature: temperature}
+		if step < maxAgentSteps && !repeated {
+			opts.Tools = tools // the last round must answer in words
+		}
+		before := answer.Len()
+		var calls []llama.ToolCall
+		calls, err = llama.ChatStream(a.ctx, url, msgs, opts, onDelta)
+		if err != nil || len(calls) == 0 {
+			break
+		}
+		stepText := answer.String()[before:]
+		msgs = append(msgs, llama.Message{Role: "assistant", Content: stepText, ToolCalls: calls})
+		for _, call := range calls {
+			key := call.Function.Name + "\x00" + strings.TrimSpace(call.Function.Arguments)
+			if prev, ok := done[key]; ok {
+				// Small models sometimes repeat a call; don't run it again,
+				// and make the next round answer instead.
+				repeated = true
+				msgs = append(msgs, llama.Message{Role: "tool", ToolCallID: call.ID,
+					Content: prev + "\n(You already called this tool with these arguments. Answer the user now.)"})
+				continue
+			}
+			ts := ToolStep{Tool: call.Function.Name, Args: call.Function.Arguments}
+			if err = ev.ToolCall(ts); err != nil {
+				break
+			}
+			result := a.runTool(agent, call)
+			done[key] = result
+			ts.Result = preview(result)
+			steps = append(steps, ts)
+			if err = ev.ToolResult(ts); err != nil {
+				break
+			}
+			msgs = append(msgs, llama.Message{Role: "tool", ToolCallID: call.ID, Content: result})
+		}
+		if err != nil {
+			break
+		}
+		// Separate any text written before the tool call from the answer.
+		if answer.Len() > before {
+			answer.WriteString("\n\n")
+			ev.Token("\n\n")
+		}
+	}
 	reply := strings.TrimSpace(stripThink(answer.String()))
 	if reply == "" && err != nil {
 		return err
@@ -127,14 +254,29 @@ func (a *App) Chat(req ChatRequest, ev ChatEvents) error {
 
 	now := time.Now()
 	chat.Messages = append(chat.Messages,
-		ChatMessage{Role: "user", Content: msg, Time: now},
-		ChatMessage{Role: "assistant", Content: reply, Sources: sources, Time: now},
+		ChatMessage{Role: "user", Content: msg, Images: imageIDs, Time: now},
+		ChatMessage{Role: "assistant", Content: reply, Sources: sources, Steps: steps, Time: now},
 	)
 	chat.Updated = now
 	if serr := a.saveChat(chat); serr != nil {
 		return serr
 	}
 	return err
+}
+
+func agentTools(ag *Agent) []string {
+	if ag == nil {
+		return nil
+	}
+	var out []string
+	for _, t := range ag.Tools {
+		// Document tools are useless for an agent without document access.
+		if ag.Knowledge == "none" && (t == "search_documents" || t == "read_document" || t == "list_documents") {
+			continue
+		}
+		out = append(out, t)
+	}
+	return out
 }
 
 // stripThink removes <think>…</think> blocks from models that emit them inline.
@@ -152,9 +294,27 @@ func stripThink(s string) string {
 	}
 }
 
-func (a *App) systemPrompt() string {
+func (a *App) systemPrompt(agent *Agent) string {
 	var b strings.Builder
 	b.WriteString(a.cfg.SystemPrompt)
+	if agent != nil {
+		fmt.Fprintf(&b, "\n\nYou are acting as the agent %q.", agent.Name)
+		if agent.Description != "" {
+			b.WriteString(" Purpose: " + agent.Description)
+		}
+		if strings.TrimSpace(agent.Instructions) != "" {
+			b.WriteString("\n\nInstructions from the user for this agent:\n" + agent.Instructions)
+		}
+		if len(agentTools(agent)) > 0 {
+			b.WriteString("\n\nYou can call tools. Use them whenever they help, then answer the user in plain language.")
+		}
+		if agent.HasTool("calculator") {
+			b.WriteString(" For any arithmetic, call the calculator tool instead of computing it yourself.")
+		}
+		if agentTools(agent) != nil && agent.HasTool("search_documents") {
+			b.WriteString(" Search the user's documents before answering questions about them.")
+		}
+	}
 	b.WriteString("\n\nToday's date is ")
 	b.WriteString(time.Now().Format("Monday, 2 January 2006"))
 	b.WriteString(".")

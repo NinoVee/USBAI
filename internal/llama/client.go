@@ -11,10 +11,51 @@ import (
 	"strings"
 )
 
-// Message is an OpenAI-style chat message.
+// Message is an OpenAI-style chat message. Content is a string, or a
+// []Part when the message carries images.
 type Message struct {
-	Role    string `json:"role"`
-	Content string `json:"content"`
+	Role       string     `json:"role"`
+	Content    any        `json:"content"`
+	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
+	ToolCallID string     `json:"tool_call_id,omitempty"`
+}
+
+// Part is one piece of a multimodal message.
+type Part struct {
+	Type     string    `json:"type"` // "text" or "image_url"
+	Text     string    `json:"text,omitempty"`
+	ImageURL *ImageURL `json:"image_url,omitempty"`
+}
+
+// ImageURL carries an image as a data: URL.
+type ImageURL struct {
+	URL string `json:"url"`
+}
+
+// Tool describes a function the model may call.
+type Tool struct {
+	Type     string       `json:"type"` // "function"
+	Function ToolFunction `json:"function"`
+}
+
+// ToolFunction is a tool's name, purpose and JSON-schema parameters.
+type ToolFunction struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Parameters  any    `json:"parameters"`
+}
+
+// ToolCall is a function call requested by the model.
+type ToolCall struct {
+	ID       string       `json:"id"`
+	Type     string       `json:"type"`
+	Function FunctionCall `json:"function"`
+}
+
+// FunctionCall names the function and its JSON-encoded arguments.
+type FunctionCall struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
 }
 
 // Delta is one streamed piece of a chat completion. Reasoning models
@@ -24,29 +65,42 @@ type Delta struct {
 	Reasoning string
 }
 
+// ChatOptions tunes one completion.
+type ChatOptions struct {
+	Temperature float64
+	Tools       []Tool
+}
+
 // ChatStream sends a chat completion request and calls onDelta for each
-// streamed token batch. It returns when the stream ends.
-func ChatStream(ctx context.Context, baseURL string, msgs []Message, temperature float64, onDelta func(Delta) error) error {
-	body, _ := json.Marshal(map[string]any{
+// streamed token batch. It returns any tool calls the model made once the
+// stream ends.
+func ChatStream(ctx context.Context, baseURL string, msgs []Message, opts ChatOptions, onDelta func(Delta) error) ([]ToolCall, error) {
+	payload := map[string]any{
 		"messages":    msgs,
 		"stream":      true,
-		"temperature": temperature,
-	})
+		"temperature": opts.Temperature,
+	}
+	if len(opts.Tools) > 0 {
+		payload["tools"] = opts.Tools
+	}
+	body, _ := json.Marshal(payload)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/v1/chat/completions", bytes.NewReader(body))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return fmt.Errorf("model server: %s: %s", resp.Status, strings.TrimSpace(string(b)))
+		return nil, fmt.Errorf("model server: %s: %s", resp.Status, strings.TrimSpace(string(b)))
 	}
 
+	// Tool calls stream in fragments keyed by index.
+	var calls []ToolCall
 	sc := bufio.NewScanner(resp.Body)
 	sc.Buffer(make([]byte, 64*1024), 4*1024*1024)
 	for sc.Scan() {
@@ -56,13 +110,21 @@ func ChatStream(ctx context.Context, baseURL string, msgs []Message, temperature
 		}
 		data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
 		if data == "[DONE]" {
-			return nil
+			break
 		}
 		var chunk struct {
 			Choices []struct {
 				Delta struct {
 					Content          string `json:"content"`
 					ReasoningContent string `json:"reasoning_content"`
+					ToolCalls        []struct {
+						Index    int    `json:"index"`
+						ID       string `json:"id"`
+						Function struct {
+							Name      string `json:"name"`
+							Arguments string `json:"arguments"`
+						} `json:"function"`
+					} `json:"tool_calls"`
 				} `json:"delta"`
 			} `json:"choices"`
 			Error *struct {
@@ -73,19 +135,38 @@ func ChatStream(ctx context.Context, baseURL string, msgs []Message, temperature
 			continue
 		}
 		if chunk.Error != nil {
-			return fmt.Errorf("model server: %s", chunk.Error.Message)
+			return nil, fmt.Errorf("model server: %s", chunk.Error.Message)
 		}
 		for _, c := range chunk.Choices {
+			for _, tc := range c.Delta.ToolCalls {
+				for len(calls) <= tc.Index {
+					calls = append(calls, ToolCall{Type: "function"})
+				}
+				call := &calls[tc.Index]
+				if tc.ID != "" {
+					call.ID = tc.ID
+				}
+				call.Function.Name += tc.Function.Name
+				call.Function.Arguments += tc.Function.Arguments
+			}
 			d := Delta{Content: c.Delta.Content, Reasoning: c.Delta.ReasoningContent}
 			if d.Content == "" && d.Reasoning == "" {
 				continue
 			}
 			if err := onDelta(d); err != nil {
-				return err
+				return nil, err
 			}
 		}
 	}
-	return sc.Err()
+	if err := sc.Err(); err != nil {
+		return nil, err
+	}
+	for i := range calls {
+		if calls[i].ID == "" {
+			calls[i].ID = fmt.Sprintf("call_%d", i)
+		}
+	}
+	return calls, nil
 }
 
 // Embed returns one embedding vector per input.

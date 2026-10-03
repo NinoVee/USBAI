@@ -31,7 +31,11 @@ for target in windows/amd64 windows/arm64 darwin/arm64 darwin/amd64 linux/amd64 
     -o "$OUT/bin/$dos-$darch/privateai$ext" ./cmd/privateai
 done
 
-[ -f "$OUT/config.json" ] || cp drive/config.json "$OUT/config.json"
+if [ -f "$OUT/config.json" ]; then
+  go run ./cmd/drivetool sync-config -drive "$OUT" -template drive/config.json
+else
+  cp drive/config.json "$OUT/config.json"
+fi
 cp drive/README.txt "$OUT/README.txt"
 cp launchers/Start-Windows.bat "$OUT/Start-Windows.bat"
 cp launchers/Start-macOS.command "$OUT/Start-macOS.command"

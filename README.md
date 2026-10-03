@@ -76,6 +76,38 @@ Forgetting the passphrase makes the vault unrecoverable. That is deliberate.
   matters for "summarize this contract". Otherwise it gets the most relevant
   excerpts. Sources are shown under each answer.
 
+### Screenshots and images
+
+Paste a screenshot into the chat (⌘V / Ctrl+V), drop an image on it, or use 📎.
+The browser shrinks it to 1280 px before sending, which keeps text readable
+and cuts processing time about 3–4×. Images are stored encrypted in the vault
+with the chat.
+
+Reading images needs a **vision model**: a chat model with a matching image
+projector (`mmproj`) file. The default is Qwen3-VL 4B, with Qwen3-VL 2B for
+low-memory computers. If the active model can't see images, the chat offers
+to switch.
+
+### Agents
+
+The **Agents** tab creates assistants with their own:
+
+- **instructions**: their role, focus and answer format
+- **tools**: search documents, read a document, list documents, calculator,
+  date & time, remember a fact, create a note (saved to Files)
+- **documents**: all files, selected files, or none
+- **creativity**: the model's temperature setting
+
+Pick an agent from the menu under the chat box, or start from a template:
+Research Assistant, Contract Reviewer, Note Taker, Math Tutor, Writing Coach.
+Agents use llama.cpp's tool calling. The model may call tools for up to 6
+rounds before it must answer, and each answer shows the tools it used.
+
+Tools run in-process. They can't reach the internet, run programs, or touch
+the host computer's files. The most an agent can change is adding a note or a
+memory to your own vault. Agents and their chats are encrypted like
+everything else.
+
 ## Building a drive
 
 You need Go 1.24 or newer.
@@ -120,11 +152,16 @@ about an uploaded contract with correct citations.
 | id | model | size | RAM |
 |---|---|---|---|
 | `qwen3-8b` | Qwen3 8B Q4_K_M | ~5 GB | 16 GB+ |
+| `qwen3-vl-4b` | Qwen3-VL 4B Instruct Q4_K_M + mmproj Q8_0, **sees images** | ~2.9 GB | 8 GB+ |
 | `qwen3-4b` | Qwen3 4B Instruct 2507 Q4_K_M | ~2.5 GB | 8 GB+ |
+| `qwen3-vl-2b` | Qwen3-VL 2B Instruct Q4_K_M + mmproj Q8_0, **sees images** | ~1.5 GB | 4 GB+ |
 | `qwen3-1.7b` | Qwen3 1.7B Q4_K_M | ~1.1 GB | 4 GB+ |
 | `nomic-embed` | nomic-embed-text v1.5 Q8_0 | ~140 MB | — |
 
-To use any other GGUF model, add an entry to `config.json`.
+To use any other GGUF model, add an entry to `config.json`. For a vision
+model, also set `mmproj` and `mmproj_url`. When `build-drive.sh` runs on an
+existing drive, it calls `drivetool sync-config`, which adds models introduced
+by updates and keeps your other settings.
 
 ## Known limits
 
@@ -151,6 +188,6 @@ To use any other GGUF model, add an entry to `config.json`.
 | `internal/llama` | starts `llama-server`, streams chat, gets embeddings |
 | `internal/vault` | encrypted object store |
 | `internal/rag` | text extraction, chunking, hybrid index |
-| `internal/app` | app state, chat orchestration, HTTP API |
+| `internal/app` | app state, chat orchestration, agents and tools, images, HTTP API |
 | `web/static` | the UI (vanilla HTML/CSS/JS, embedded) |
 | `launchers/`, `drive/` | files copied to the drive root |

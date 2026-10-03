@@ -23,6 +23,7 @@ func main() {
 	flag.Int("ubatch-size", 0, "")
 	flag.Int("threads", 0, "")
 	flag.Bool("jinja", false, "")
+	flag.String("mmproj", "", "")
 	flag.Parse()
 
 	// FAKELLAMA_DELAY (e.g. "5s") simulates a slow model load.
@@ -60,25 +61,75 @@ func main() {
 	})
 	http.HandleFunc("/v1/chat/completions", func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
-			Messages []struct{ Role, Content string }
+			Messages []struct {
+				Role    string
+				Content json.RawMessage
+			}
+			Tools []struct {
+				Function struct{ Name string }
+			}
 		}
 		json.NewDecoder(r.Body).Decode(&req)
-		last := req.Messages[len(req.Messages)-1].Content
-		reply := fmt.Sprintf("Got %d messages. ", len(req.Messages))
-		if strings.Contains(last, "Document excerpts:") {
-			reply += "Context: " + strings.ReplaceAll(last[:min(len(last), 300)], "\n", " ")
-		} else {
-			reply += "No documents."
+		lastMsg := req.Messages[len(req.Messages)-1]
+		// Content is a string, or parts when images are attached.
+		var last string
+		images := 0
+		if json.Unmarshal(lastMsg.Content, &last) != nil {
+			var parts []struct {
+				Type string
+				Text string
+			}
+			json.Unmarshal(lastMsg.Content, &parts)
+			for _, p := range parts {
+				if p.Type == "image_url" {
+					images++
+				} else {
+					last += p.Text
+				}
+			}
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
-		send := func(delta map[string]string) {
+		send := func(delta map[string]any) {
 			b, _ := json.Marshal(map[string]any{"choices": []any{map[string]any{"delta": delta}}})
 			fmt.Fprintf(w, "data: %s\n\n", b)
 			w.(http.Flusher).Flush()
 		}
-		send(map[string]string{"reasoning_content": "hmm"})
+
+		// "calc: EXPR" asks for the calculator tool when it is offered;
+		// "loop: EXPR" keeps asking for it, like a confused small model.
+		for _, m := range req.Messages {
+			var text string
+			if json.Unmarshal(m.Content, &text) == nil && m.Role == "user" && len(req.Tools) > 0 {
+				if i := strings.Index(text, "loop:"); i >= 0 {
+					last, lastMsg.Role = "calc:"+text[i+5:], "user"
+				}
+			}
+		}
+		if i := strings.Index(last, "calc:"); i >= 0 && lastMsg.Role == "user" && len(req.Tools) > 0 {
+			args, _ := json.Marshal(map[string]string{"expression": strings.TrimSpace(last[i+5:])})
+			send(map[string]any{"tool_calls": []any{map[string]any{"index": 0, "id": "c1", "function": map[string]any{"name": "calculator", "arguments": ""}}}})
+			send(map[string]any{"tool_calls": []any{map[string]any{"index": 0, "function": map[string]any{"arguments": string(args)}}}})
+			fmt.Fprint(w, "data: [DONE]\n\n")
+			return
+		}
+
+		reply := fmt.Sprintf("Got %d messages. ", len(req.Messages))
+		switch {
+		case lastMsg.Role == "tool":
+			reply += "Tool said: " + last
+		case images > 0:
+			reply += fmt.Sprintf("I see %d image(s).", images)
+		case strings.Contains(last, "Document excerpts:"):
+			reply += "Context: " + strings.ReplaceAll(last[:min(len(last), 300)], "\n", " ")
+		default:
+			reply += "No documents."
+		}
+		if strings.Contains(string(req.Messages[0].Content), "acting as the agent") {
+			reply += " [agent]"
+		}
+		send(map[string]any{"reasoning_content": "hmm"})
 		for _, word := range strings.SplitAfter(reply, " ") {
-			send(map[string]string{"content": word})
+			send(map[string]any{"content": word})
 		}
 		fmt.Fprint(w, "data: [DONE]\n\n")
 	})

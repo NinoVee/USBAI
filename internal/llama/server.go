@@ -31,6 +31,7 @@ type Options struct {
 	GPULayers  int
 	Threads    int
 	Embedding  bool
+	MMProj     string // optional image projector (.gguf) for vision models
 	ExtraArgs  []string
 	LogPrefix  string
 	Log        io.Writer
@@ -77,6 +78,9 @@ func Start(ctx context.Context, o Options) (*Server, error) {
 		args = append(args, "--embedding", "--batch-size", n, "--ubatch-size", n)
 	} else {
 		args = append(args, "--jinja")
+	}
+	if o.MMProj != "" {
+		args = append(args, "--mmproj", o.MMProj)
 	}
 	args = append(args, o.ExtraArgs...)
 

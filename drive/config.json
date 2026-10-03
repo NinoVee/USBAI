@@ -15,12 +15,34 @@
       "context": 8192
     },
     {
+      "id": "qwen3-vl-4b",
+      "name": "Qwen3 VL 4B (balanced, sees images)",
+      "role": "chat",
+      "file": "models/chat/Qwen3VL-4B-Instruct-Q4_K_M.gguf",
+      "url": "https://huggingface.co/Qwen/Qwen3-VL-4B-Instruct-GGUF/resolve/main/Qwen3VL-4B-Instruct-Q4_K_M.gguf",
+      "mmproj": "models/chat/mmproj-Qwen3VL-4B-Instruct-Q8_0.gguf",
+      "mmproj_url": "https://huggingface.co/Qwen/Qwen3-VL-4B-Instruct-GGUF/resolve/main/mmproj-Qwen3VL-4B-Instruct-Q8_0.gguf",
+      "min_ram_gb": 8,
+      "context": 8192
+    },
+    {
       "id": "qwen3-4b",
       "name": "Qwen3 4B Instruct (balanced)",
       "role": "chat",
       "file": "models/chat/Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
       "url": "https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF/resolve/main/Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
       "min_ram_gb": 8,
+      "context": 8192
+    },
+    {
+      "id": "qwen3-vl-2b",
+      "name": "Qwen3 VL 2B (small, sees images)",
+      "role": "chat",
+      "file": "models/chat/Qwen3VL-2B-Instruct-Q4_K_M.gguf",
+      "url": "https://huggingface.co/Qwen/Qwen3-VL-2B-Instruct-GGUF/resolve/main/Qwen3VL-2B-Instruct-Q4_K_M.gguf",
+      "mmproj": "models/chat/mmproj-Qwen3VL-2B-Instruct-Q8_0.gguf",
+      "mmproj_url": "https://huggingface.co/Qwen/Qwen3-VL-2B-Instruct-GGUF/resolve/main/mmproj-Qwen3VL-2B-Instruct-Q8_0.gguf",
+      "min_ram_gb": 4,
       "context": 8192
     },
     {
