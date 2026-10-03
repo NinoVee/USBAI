@@ -23,6 +23,7 @@ type Model struct {
 	File string `json:"file"`
 	// URL is only used by drivetool when preparing a drive.
 	URL      string `json:"url,omitempty"`
+	Size     int64  `json:"size,omitempty"` // expected bytes; catches truncated copies
 	SHA256   string `json:"sha256,omitempty"`
 	MinRAMGB int    `json:"min_ram_gb,omitempty"`
 	Context  int    `json:"context,omitempty"`
@@ -30,6 +31,7 @@ type Model struct {
 	// (drive-relative), with its download URL for drivetool.
 	MMProj       string `json:"mmproj,omitempty"`
 	MMProjURL    string `json:"mmproj_url,omitempty"`
+	MMProjSize   int64  `json:"mmproj_size,omitempty"`
 	MMProjSHA256 string `json:"mmproj_sha256,omitempty"`
 	// Prefixes some embedding models (e.g. nomic-embed) expect.
 	QueryPrefix    string `json:"query_prefix,omitempty"`
@@ -115,13 +117,28 @@ func (c Config) ModelsByRole(role string) []Model {
 	return out
 }
 
-// Vision reports whether the model's image projector is on the drive.
+// Vision reports whether the model's image projector is on the drive and
+// complete.
 func (c Config) Vision(m Model) bool {
-	if m.MMProj == "" {
-		return false
+	return m.MMProj != "" && checkFile(c.Path(m.MMProj), m.MMProjSize) == nil
+}
+
+// Check reports why a model's file can't be used: missing, or a different
+// size than expected (usually a copy to the drive that was cut short).
+func (c Config) Check(m Model) error {
+	return checkFile(c.Path(m.File), m.Size)
+}
+
+func checkFile(path string, want int64) error {
+	st, err := os.Stat(path)
+	if err != nil || st.IsDir() || st.Size() == 0 {
+		return fmt.Errorf("%s is missing", filepath.Base(path))
 	}
-	st, err := os.Stat(c.Path(m.MMProj))
-	return err == nil && !st.IsDir() && st.Size() > 0
+	if want > 0 && st.Size() != want {
+		return fmt.Errorf("%s is incomplete or damaged (%.2f GB on the drive, should be %.2f GB) — copy it to the drive again",
+			filepath.Base(path), float64(st.Size())/(1<<30), float64(want)/(1<<30))
+	}
+	return nil
 }
 
 // Present reports whether the model file exists on the drive.

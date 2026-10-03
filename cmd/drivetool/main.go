@@ -74,6 +74,8 @@ func main() {
 		err = fetchModels(*drive, splitList(*only))
 	case "check":
 		err = check(*drive)
+	case "verify":
+		err = verifyDrive(*drive)
 	case "sync-config":
 		err = syncConfig(*drive, *template)
 	default:
@@ -86,7 +88,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: drivetool fetch-runtime|fetch-models|sync-config|check -drive DIR [-only a,b] [-tag bNNNN]")
+	fmt.Fprintln(os.Stderr, "usage: drivetool fetch-runtime|fetch-models|sync-config|check|verify -drive DIR [-only a,b] [-tag bNNNN]")
 	os.Exit(2)
 }
 
@@ -528,12 +530,15 @@ func fetchModels(drive string, only map[string]bool) error {
 		if only != nil && !only[m.ID] {
 			continue
 		}
-		if cfg.Present(m) {
+		if cfg.Check(m) == nil {
 			fmt.Printf("%s: already present\n", m.ID)
 		} else if m.URL == "" {
 			fmt.Printf("%s: no url in config.json, skipping\n", m.ID)
 			continue
 		} else {
+			if cfg.Present(m) {
+				fmt.Printf("%s: %v — downloading again\n", m.ID, cfg.Check(m))
+			}
 			fmt.Printf("%s: downloading %s\n", m.ID, m.Name)
 			if err := download(m.URL, cfg.Path(m.File), m.SHA256); err != nil {
 				return fmt.Errorf("%s: %w", m.ID, err)
@@ -713,6 +718,51 @@ func syncConfig(drive, template string) error {
 	return nil
 }
 
+// ---- Verify ----
+
+// verifyDrive checks every model file on the drive against its expected
+// size and SHA-256, catching copies that were cut short or corrupted.
+func verifyDrive(drive string) error {
+	cfg, err := config.Load(drive)
+	if err != nil {
+		return err
+	}
+	bad := 0
+	check := func(label, rel string, size int64, sum string) {
+		path := cfg.Path(rel)
+		st, err := os.Stat(path)
+		if err != nil {
+			return // not on this drive; nothing to verify
+		}
+		fmt.Printf("%-40s ", label)
+		switch {
+		case size > 0 && st.Size() != size:
+			fmt.Printf("BAD: %d bytes, expected %d (incomplete copy)\n", st.Size(), size)
+			bad++
+		case sum == "":
+			fmt.Println("ok (size only; no checksum in config)")
+		default:
+			if err := verify(path, sum); err != nil {
+				fmt.Println("BAD: checksum mismatch (file is corrupted)")
+				bad++
+			} else {
+				fmt.Println("ok")
+			}
+		}
+	}
+	for _, m := range cfg.Models {
+		check(m.ID, m.File, m.Size, m.SHA256)
+		if m.MMProj != "" {
+			check(m.ID+" (image projector)", m.MMProj, m.MMProjSize, m.MMProjSHA256)
+		}
+	}
+	if bad > 0 {
+		return fmt.Errorf("%d file(s) damaged: copy them to the drive again, or run fetch-models -drive %s", bad, drive)
+	}
+	fmt.Println("All model files are intact.")
+	return nil
+}
+
 // ---- Check ----
 
 func check(drive string) error {
@@ -735,6 +785,9 @@ func check(drive string) error {
 		if cfg.Present(m) {
 			st, _ := os.Stat(cfg.Path(m.File))
 			mark = fmt.Sprintf("ok (%.1f GB)", float64(st.Size())/(1<<30))
+			if err := cfg.Check(m); err != nil {
+				mark = "INCOMPLETE: " + err.Error()
+			}
 		}
 		if m.MMProj != "" {
 			if cfg.Vision(m) {

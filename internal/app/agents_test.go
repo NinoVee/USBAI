@@ -274,3 +274,40 @@ func TestImagesInChat(t *testing.T) {
 		t.Fatal("image survived chat deletion")
 	}
 }
+
+// TestChatModelFallback reproduces a model copied to the drive incompletely
+// and one that fails to load: the app must fall back to a working model and
+// say why.
+func TestChatModelFallback(t *testing.T) {
+	root := t.TempDir()
+	host := platform.Detect()
+	host.Accel = nil
+	host.RAMBytes = 16 << 30
+	rt := filepath.Join(root, "runtime", host.Slug()+"-cpu")
+	if out, err := exec.Command("go", "build", "-o", filepath.Join(rt, host.ServerBinary()), "./testdata/fakellama").CombinedOutput(); err != nil {
+		t.Fatalf("build fake server: %v\n%s", err, out)
+	}
+	for _, f := range []string{"models/chat/truncated.gguf", "models/chat/broken.gguf", "models/chat/good.gguf"} {
+		os.MkdirAll(filepath.Dir(filepath.Join(root, f)), 0o755)
+		os.WriteFile(filepath.Join(root, f), []byte("GGUF"), 0o644)
+	}
+	cfg := config.Default()
+	cfg.Root = root
+	cfg.Models = []config.Model{
+		{ID: "truncated", Name: "Truncated", Role: "chat", File: "models/chat/truncated.gguf", Size: 2_497_281_664, MinRAMGB: 8},
+		{ID: "broken", Name: "Broken", Role: "chat", File: "models/chat/broken.gguf", MinRAMGB: 8},
+		{ID: "good", Name: "Good", Role: "chat", File: "models/chat/good.gguf", Size: 4, MinRAMGB: 4},
+	}
+	a := New(cfg, host, io.Discard)
+	defer a.Stop()
+	a.startChat()
+
+	if _, m, ok := a.chatEngine(); !ok || m.ID != "good" {
+		t.Fatalf("expected fallback to good model, got %q ready=%v err=%q", m.ID, ok, a.chatErr)
+	}
+	for _, want := range []string{"Truncated: truncated.gguf is incomplete", "copy it to the drive again", "Broken: llama_model_load: error loading model"} {
+		if !strings.Contains(a.chatWarn, want) {
+			t.Errorf("warning %q lacks %q", a.chatWarn, want)
+		}
+	}
+}

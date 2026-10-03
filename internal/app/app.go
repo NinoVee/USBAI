@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 
@@ -46,6 +47,7 @@ type App struct {
 	chatRuntime string
 	chatState   string
 	chatErr     string
+	chatWarn    string // set when a fallback model is in use
 	embed       *llama.Server
 	embedModel  config.Model
 	embedState  string
@@ -107,39 +109,48 @@ func (a *App) saveSettings(s settings) error {
 	return os.WriteFile(filepath.Join(a.dataDir, "settings.json"), b, 0o600)
 }
 
-// pickChatModel chooses the user's saved model if present, otherwise the
-// first model in config order that is on the drive and fits in RAM, otherwise
-// the smallest model present.
-func (a *App) pickChatModel() (config.Model, error) {
-	var present []config.Model
+// chatCandidates orders the usable chat models to try: the user's saved
+// choice, then models in config order that fit in RAM, then the rest from
+// smallest. Models whose files are missing or damaged are left out and
+// described in problems.
+func (a *App) chatCandidates() (cands []config.Model, problems []string) {
+	var usable []config.Model
 	for _, m := range a.cfg.ModelsByRole("chat") {
-		if a.cfg.Present(m) {
-			present = append(present, m)
+		if !a.cfg.Present(m) {
+			continue
+		}
+		if err := a.cfg.Check(m); err != nil {
+			problems = append(problems, m.Name+": "+err.Error())
+			continue
+		}
+		usable = append(usable, m)
+	}
+	seen := map[string]bool{}
+	add := func(m config.Model) {
+		if !seen[m.ID] {
+			seen[m.ID] = true
+			cands = append(cands, m)
 		}
 	}
-	if len(present) == 0 {
-		return config.Model{}, errors.New("no chat model found in models/ — run drivetool fetch-models")
-	}
 	if want := a.loadSettings().ChatModel; want != "" {
-		for _, m := range present {
+		for _, m := range usable {
 			if m.ID == want {
-				return m, nil
+				add(m)
 			}
 		}
 	}
 	ram := a.host.RAMGB()
-	for _, m := range present {
+	for _, m := range usable {
 		if ram == 0 || m.MinRAMGB <= ram {
-			return m, nil
+			add(m)
 		}
 	}
-	smallest := present[0]
-	for _, m := range present[1:] {
-		if m.MinRAMGB < smallest.MinRAMGB {
-			smallest = m
-		}
+	rest := append([]config.Model(nil), usable...)
+	sort.SliceStable(rest, func(i, j int) bool { return rest[i].MinRAMGB < rest[j].MinRAMGB })
+	for _, m := range rest {
+		add(m)
 	}
-	return smallest, nil
+	return cands, problems
 }
 
 // StartEngines loads the chat and embedding models in the background.
@@ -234,19 +245,46 @@ func (a *App) startChat() {
 	gen := a.engGen
 	old := a.chat
 	a.chat = nil
-	a.chatState, a.chatErr = StateStarting, ""
-	m, err := a.pickChatModel()
-	if err != nil {
-		a.chatState, a.chatErr = StateNoModel, err.Error()
+	a.chatState, a.chatErr, a.chatWarn = StateStarting, "", ""
+	cands, problems := a.chatCandidates()
+	if len(cands) == 0 {
+		a.chatState = StateNoModel
+		a.chatErr = "no usable chat model in models/ — run drivetool fetch-models"
+		if len(problems) > 0 {
+			a.chatErr = strings.Join(problems, "\n")
+		}
 		a.engMu.Unlock()
 		old.Stop()
 		return
 	}
-	a.chatModel = m
+	a.chatModel = cands[0]
 	a.engMu.Unlock()
 	old.Stop()
 
-	srv, rt, err := a.startServer(m, false)
+	// Try each candidate until one loads, so one damaged or oversized model
+	// never leaves the user without an assistant.
+	var srv *llama.Server
+	var rt string
+	for i, m := range cands {
+		if i > 0 {
+			a.engMu.Lock()
+			if gen != a.engGen {
+				a.engMu.Unlock()
+				return
+			}
+			a.chatModel = m
+			a.engMu.Unlock()
+		}
+		var err error
+		srv, rt, err = a.startServer(m, false)
+		if err == nil {
+			break
+		}
+		problems = append(problems, m.Name+": "+firstLine(err))
+		if a.ctx.Err() != nil {
+			return
+		}
+	}
 
 	a.engMu.Lock()
 	defer a.engMu.Unlock()
@@ -254,19 +292,37 @@ func (a *App) startChat() {
 		srv.Stop() // superseded by a newer start or shut down
 		return
 	}
-	if err != nil {
-		a.chatState, a.chatErr = StateError, err.Error()
+	if srv == nil {
+		a.chatState, a.chatErr = StateError, strings.Join(problems, "\n")
 		return
 	}
 	a.chat, a.chatRuntime, a.chatState = srv, rt, StateReady
-	a.logf("Chat model ready: %s (%s)", m.Name, rt)
+	if len(problems) > 0 {
+		a.chatWarn = "Using " + a.chatModel.Name + " because:\n" + strings.Join(problems, "\n")
+	}
+	a.logf("Chat model ready: %s (%s)", a.chatModel.Name, rt)
+}
+
+// firstLine keeps the informative part of a llama-server failure: the
+// "failed to load" lines, else the first line.
+func firstLine(err error) string {
+	lines := strings.Split(err.Error(), "\n")
+	for _, l := range lines {
+		if strings.Contains(l, "error loading model") || strings.Contains(l, "not within the file bounds") || strings.Contains(l, "out of memory") {
+			if i := strings.Index(l, " E "); i >= 0 {
+				l = l[i+3:]
+			}
+			return strings.TrimSpace(l)
+		}
+	}
+	return lines[0]
 }
 
 func (a *App) startEmbed() {
 	models := a.cfg.ModelsByRole("embedding")
 	var m *config.Model
 	for i := range models {
-		if a.cfg.Present(models[i]) {
+		if a.cfg.Check(models[i]) == nil {
 			m = &models[i]
 			break
 		}

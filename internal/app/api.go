@@ -164,6 +164,7 @@ type modelInfo struct {
 	ID       string `json:"id"`
 	Name     string `json:"name"`
 	Present  bool   `json:"present"`
+	Problem  string `json:"problem,omitempty"`
 	MinRAMGB int    `json:"min_ram_gb"`
 	Active   bool   `json:"active"`
 	Vision   bool   `json:"vision"`
@@ -174,6 +175,7 @@ func (a *App) handleStatus(w http.ResponseWriter, r *http.Request) {
 	st := map[string]any{
 		"chat_state":    a.chatState,
 		"chat_error":    a.chatErr,
+		"chat_warning":  a.chatWarn,
 		"chat_model":    a.chatModel.Name,
 		"chat_vision":   a.chatModel.ID != "" && a.cfg.Vision(a.chatModel),
 		"chat_runtime":  a.chatRuntime,
@@ -188,7 +190,13 @@ func (a *App) handleStatus(w http.ResponseWriter, r *http.Request) {
 
 	var models []modelInfo
 	for _, m := range a.cfg.ModelsByRole("chat") {
-		models = append(models, modelInfo{ID: m.ID, Name: m.Name, Present: a.cfg.Present(m), MinRAMGB: m.MinRAMGB, Active: m.ID == active, Vision: a.cfg.Vision(m)})
+		mi := modelInfo{ID: m.ID, Name: m.Name, Present: a.cfg.Present(m), MinRAMGB: m.MinRAMGB, Active: m.ID == active, Vision: a.cfg.Vision(m)}
+		if mi.Present {
+			if err := a.cfg.Check(m); err != nil {
+				mi.Present, mi.Problem = false, err.Error()
+			}
+		}
+		models = append(models, mi)
 	}
 	st["models"] = models
 	st["host"] = a.host
@@ -237,7 +245,7 @@ func (a *App) handleSelectModel(w http.ResponseWriter, r *http.Request) {
 	}
 	found := false
 	for _, m := range a.cfg.ModelsByRole("chat") {
-		if m.ID == body.ID && a.cfg.Present(m) {
+		if m.ID == body.ID && a.cfg.Check(m) == nil {
 			found = true
 		}
 	}

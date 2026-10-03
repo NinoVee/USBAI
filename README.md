@@ -125,6 +125,7 @@ scripts/build-drive.sh
 go run ./cmd/drivetool fetch-runtime -drive dist/PRIVATE-AI            # optionally -tag b6500 -only linux-x64-cpu
 go run ./cmd/drivetool fetch-models  -drive dist/PRIVATE-AI -only qwen3-4b,nomic-embed
 go run ./cmd/drivetool check         -drive dist/PRIVATE-AI
+go run ./cmd/drivetool verify        -drive /Volumes/USBAI   # after copying: checks every model's size + SHA-256
 ```
 
 Then format the USB drive as **exFAT**, which Windows, macOS and Linux can all
@@ -162,6 +163,15 @@ To use any other GGUF model, add an entry to `config.json`. For a vision
 model, also set `mmproj` and `mmproj_url`. When `build-drive.sh` runs on an
 existing drive, it calls `drivetool sync-config`, which adds models introduced
 by updates and keeps your other settings.
+
+### Damaged or incomplete model files
+
+`config.json` records each model's exact size and SHA-256, taken from
+Hugging Face. At startup, Private AI skips any model file whose size is wrong,
+which is usually a copy to the drive that was cut short. If a model fails to
+load, it falls back to the next model that works and shows why in a yellow
+notice. To check every model on a drive, run `drivetool verify`, which can
+take a few minutes over USB.
 
 ## Known limits
 

@@ -107,6 +107,9 @@ async function refreshStatus() {
     }
     pill.title = st.chat_error || "";
     updateComposer();
+    const warn = st.chat_state === "ready" && st.chat_warning && st.chat_warning !== state.dismissedWarn;
+    $("engine-warn").classList.toggle("hidden", !warn);
+    if (warn) $("engine-warn-text").textContent = st.chat_warning;
     const failed = st.chat_state === "error" || st.chat_state === "no_model";
     $("engine-error").classList.toggle("hidden", !failed);
     if (failed) {
@@ -720,7 +723,7 @@ function renderSettings() {
     const tooBig = ram && m.min_ram_gb > ram;
     const row = el("div", { class: "row" + (m.active ? " active" : "") },
       el("div", { class: "grow" }, m.name,
-        el("div", { class: "sub" }, !m.present ? "Not on this drive" :
+        el("div", { class: "sub" }, m.problem ? "⚠ " + m.problem : !m.present ? "Not on this drive" :
           `Needs ~${m.min_ram_gb} GB RAM` + (m.vision ? " · sees images" : "") + (tooBig ? " — may be slow or fail on this computer" : "") +
           (m.active ? ` · ${st.chat_state === "ready" ? "active" : st.chat_state}` : ""))));
     if (m.present && !m.active) {
@@ -758,6 +761,10 @@ $("shutdown").addEventListener("click", async () => {
   clearInterval(poll);
 });
 
+$("engine-warn-close").addEventListener("click", () => {
+  state.dismissedWarn = state.status && state.status.chat_warning;
+  $("engine-warn").classList.add("hidden");
+});
 $("engine-retry").addEventListener("click", async () => {
   $("engine-error").classList.add("hidden");
   try { await api("POST", "/api/models/retry"); } catch {}

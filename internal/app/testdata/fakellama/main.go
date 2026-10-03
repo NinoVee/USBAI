@@ -15,7 +15,7 @@ import (
 func main() {
 	port := flag.Int("port", 0, "")
 	embedding := flag.Bool("embedding", false, "")
-	flag.String("model", "", "")
+	model := flag.String("model", "", "")
 	flag.String("host", "", "")
 	flag.Int("ctx-size", 0, "")
 	flag.Int("n-gpu-layers", 0, "")
@@ -25,6 +25,10 @@ func main() {
 	flag.Bool("jinja", false, "")
 	flag.String("mmproj", "", "")
 	flag.Parse()
+	if strings.Contains(*model, "broken") {
+		fmt.Fprintln(os.Stderr, "llama_model_load: error loading model: tensor 'blk.17.ffn_up.weight' data is not within the file bounds, model is corrupted or incomplete")
+		os.Exit(1)
+	}
 
 	// FAKELLAMA_DELAY (e.g. "5s") simulates a slow model load.
 	delay, _ := time.ParseDuration(os.Getenv("FAKELLAMA_DELAY"))
