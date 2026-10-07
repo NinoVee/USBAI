@@ -796,7 +796,7 @@ func check(drive string) error {
 				mark += ", image projector missing"
 			}
 		}
-		fmt.Printf("  %-12s %-10s %s\n", m.ID, m.Role, mark)
+		fmt.Printf("  %-16s %-10s %s\n", m.ID, m.Role, mark)
 	}
 	fmt.Println("\nRuntimes:")
 	var folders []string
