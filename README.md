@@ -175,7 +175,7 @@ laptop; the R1 distill below is the version that runs locally.
 | `qwen3-4b` | Qwen3 4B Instruct 2507 Q4_K_M | ~2.5 GB | 8 GB+ |
 | `qwen3-vl-2b` | Qwen3-VL 2B Instruct Q4_K_M + mmproj Q8_0, **sees images** | ~1.5 GB | 4 GB+ |
 | `gemma3-12b` | Gemma 3 12B Q4_K_M + mmproj F16, **sees images**, sharpest image reading | ~8.2 GB | 16 GB+ |
-| `deepseek-r1-8b` | DeepSeek R1 0528 (Qwen3 8B distill), reasons step by step (slower) | ~5.0 GB | 12 GB+ |
+| `deepseek-r1-8b` | DeepSeek R1 0528 (Qwen3 8B distill), reasons step by step; slow, and in testing it reasoned its way to a wrong answer on simple arithmetic, so treat it as optional | ~5.0 GB | 12 GB+ |
 | `qwen3-1.7b` | Qwen3 1.7B Q4_K_M | ~1.1 GB | 4 GB+ |
 | `nomic-embed` | nomic-embed-text v1.5 Q8_0 | ~140 MB | — |
 
