@@ -555,9 +555,35 @@ func fetchModels(drive string, only map[string]bool) error {
 	return nil
 }
 
-// download fetches url to path via a .part file, resuming a partial
-// download, and verifies sha256 when given.
+// download fetches url to path, retrying dropped connections: each retry
+// resumes from the partial .part file, so nothing is downloaded twice.
 func download(url, path, sha string) error {
+	var err error
+	for attempt := 1; attempt <= 6; attempt++ {
+		if err = downloadOnce(url, path, sha); err == nil || !retryable(err) {
+			return err
+		}
+		wait := time.Duration(attempt*attempt) * 2 * time.Second
+		fmt.Printf("  connection dropped (%v); resuming in %s (attempt %d of 6)\n", err, wait, attempt+1)
+		time.Sleep(wait)
+	}
+	return err
+}
+
+// retryable reports network failures worth resuming after.
+func retryable(err error) bool {
+	msg := err.Error()
+	for _, s := range []string{"interrupted", "connection reset", "timeout", "EOF", "broken pipe", "no such host", "connection refused", "502", "503", "504"} {
+		if strings.Contains(msg, s) {
+			return true
+		}
+	}
+	return false
+}
+
+// downloadOnce fetches url to path via a .part file, resuming a partial
+// download, and verifies sha256 when given.
+func downloadOnce(url, path, sha string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
