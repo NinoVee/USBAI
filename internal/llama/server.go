@@ -5,7 +5,6 @@ package llama
 import (
 	"bufio"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -36,6 +35,9 @@ type Options struct {
 	LogPrefix  string
 	Log        io.Writer
 }
+
+// LoadTimeout bounds how long a model may take to load.
+var LoadTimeout = 90 * time.Minute
 
 // Server is a running llama-server process.
 type Server struct {
@@ -103,7 +105,10 @@ func Start(ctx context.Context, o Options) (*Server, error) {
 		close(s.done)
 	}()
 
-	if err := s.waitHealthy(ctx, 5*time.Minute); err != nil {
+	// Slow USB drives can take many minutes to read a large model. Wait as
+	// long as the process is alive: giving up early (and retrying) only
+	// starts the slow read again from scratch.
+	if err := s.waitHealthy(ctx, LoadTimeout); err != nil {
 		s.Stop()
 		return nil, err
 	}
@@ -152,7 +157,7 @@ func (s *Server) waitHealthy(ctx context.Context, timeout time.Duration) error {
 			}
 		}
 	}
-	return errors.New("timed out waiting for llama-server to load the model")
+	return fmt.Errorf("the model did not finish loading within %s — the drive may be too slow or faulty", timeout)
 }
 
 // Alive reports whether the process is still running.

@@ -99,7 +99,8 @@ async function refreshStatus() {
       pill.textContent = "● " + st.chat_model;
       pill.classList.add("ready");
     } else if (st.chat_state === "starting") {
-      pill.textContent = "Loading " + (st.chat_model || "model") + "…";
+      const secs = st.chat_loading_secs || 0;
+      pill.textContent = `Loading ${st.chat_model || "model"}… ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
       pill.classList.add("starting");
     } else {
       pill.textContent = st.chat_state === "no_model" ? "No model on drive" : "Model failed to start";
@@ -107,6 +108,7 @@ async function refreshStatus() {
     }
     pill.title = st.chat_error || "";
     updateComposer();
+    renderLoadTip(st);
     const warn = st.chat_state === "ready" && st.chat_warning && st.chat_warning !== state.dismissedWarn;
     $("engine-warn").classList.toggle("hidden", !warn);
     if (warn) $("engine-warn-text").textContent = st.chat_warning;
@@ -137,6 +139,14 @@ function updateComposer() {
     : state.status && state.status.chat_state === "starting"
       ? "Loading the AI model from the drive… this can take a minute or two the first time"
       : "The AI model is not running — see the message above";
+}
+
+// After a slow load from the drive, suggest the model cache.
+function renderLoadTip(st) {
+  const slow = (st.chat_state === "starting" && st.chat_loading_secs > 90) ||
+    (st.chat_state === "ready" && st.chat_load_secs > 90);
+  const show = slow && !st.cache_on && !state.tipDismissed;
+  $("load-tip").classList.toggle("hidden", !show);
 }
 
 // ---- Lock screen ----
@@ -800,6 +810,13 @@ $("vision-select").addEventListener("change", async (e) => {
   e.target.blur();
   refreshStatus();
 });
+$("load-tip-on").addEventListener("click", async () => {
+  await api("POST", "/api/cache", { enabled: true });
+  state.tipDismissed = true;
+  $("load-tip").classList.add("hidden");
+  refreshStatus();
+});
+$("load-tip-close").addEventListener("click", () => { state.tipDismissed = true; $("load-tip").classList.add("hidden"); });
 $("engine-warn-close").addEventListener("click", () => {
   state.dismissedWarn = state.status && state.status.chat_warning;
   $("engine-warn").classList.add("hidden");

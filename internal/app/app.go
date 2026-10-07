@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/ninovee/usbai/internal/config"
 	"github.com/ninovee/usbai/internal/llama"
@@ -48,7 +49,9 @@ type App struct {
 	chatRuntime string
 	chatState   string
 	chatErr     string
-	chatWarn    string // set when a fallback model is in use
+	chatWarn    string    // set when a fallback model is in use
+	chatSince   time.Time // when the current chat model started loading
+	chatLoadDur time.Duration
 	embed       *llama.Server
 	embedModel  config.Model
 	embedState  string
@@ -174,8 +177,13 @@ func (a *App) chatCandidates() (cands []config.Model, problems []string) {
 
 // StartEngines loads the chat and embedding models in the background.
 func (a *App) StartEngines() {
-	go a.startChat()
-	go a.startEmbed()
+	// One at a time: models loading in parallel from the same USB drive
+	// slow each other down. The chat model comes first; the small
+	// embedding model (document search) and the image reader follow.
+	go func() {
+		a.startChat()
+		a.startEmbed()
+	}()
 }
 
 // startServer tries each runtime candidate (GPU builds first, CPU last) and
@@ -294,6 +302,7 @@ func (a *App) startChat() {
 		return
 	}
 	a.chatModel = cands[0]
+	a.chatSince = time.Now()
 	a.engMu.Unlock()
 	old.Stop()
 
@@ -333,10 +342,11 @@ func (a *App) startChat() {
 		return
 	}
 	a.chat, a.chatRuntime, a.chatState = srv, rt, StateReady
+	a.chatLoadDur = time.Since(a.chatSince).Round(time.Second)
 	if len(problems) > 0 {
 		a.chatWarn = "Using " + a.chatModel.Name + " because:\n" + strings.Join(problems, "\n")
 	}
-	a.logf("Chat model ready: %s (%s)", a.chatModel.Name, rt)
+	a.logf("Chat model ready: %s (%s), loaded in %s", a.chatModel.Name, rt, a.chatLoadDur)
 	go a.startVision()
 }
 

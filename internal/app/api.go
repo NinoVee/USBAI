@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/ninovee/usbai/internal/rag"
 	"github.com/ninovee/usbai/internal/vault"
@@ -212,20 +213,22 @@ type modelInfo struct {
 func (a *App) handleStatus(w http.ResponseWriter, r *http.Request) {
 	a.engMu.Lock()
 	st := map[string]any{
-		"chat_state":    a.chatState,
-		"chat_error":    a.chatErr,
-		"chat_warning":  a.chatWarn,
-		"vision_state":  a.visionState,
-		"vision_model":  a.visionModel.Name,
-		"vision_error":  a.visionErr,
-		"chat_model":    a.chatModel.Name,
-		"chat_vision":   a.chatModel.ID != "" && a.cfg.Vision(a.chatModel),
-		"chat_runtime":  a.chatRuntime,
-		"embed_state":   a.embedState,
-		"embed_model":   a.embedModel.Name,
-		"context_size":  a.chatModel.Context,
-		"active_model":  a.chatModel.ID,
-		"supported_ext": rag.SupportedExtensions,
+		"chat_state":        a.chatState,
+		"chat_error":        a.chatErr,
+		"chat_warning":      a.chatWarn,
+		"chat_loading_secs": int(time.Since(a.chatSince).Seconds()),
+		"chat_load_secs":    int(a.chatLoadDur.Seconds()),
+		"vision_state":      a.visionState,
+		"vision_model":      a.visionModel.Name,
+		"vision_error":      a.visionErr,
+		"chat_model":        a.chatModel.Name,
+		"chat_vision":       a.chatModel.ID != "" && a.cfg.Vision(a.chatModel),
+		"chat_runtime":      a.chatRuntime,
+		"embed_state":       a.embedState,
+		"embed_model":       a.embedModel.Name,
+		"context_size":      a.chatModel.Context,
+		"active_model":      a.chatModel.ID,
+		"supported_ext":     rag.SupportedExtensions,
 	}
 	active := a.chatModel.ID
 	// Images work if the chat model sees them, or the image reader is up.
