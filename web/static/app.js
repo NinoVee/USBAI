@@ -879,25 +879,36 @@ const prefs = (() => {
   return { get, set };
 })();
 
-const theme = () => prefs.get("theme", "matrix");
+const THEMES = ["matrix", "claude", "terminal", "classic"];
+const theme = () => { const t = prefs.get("theme", "matrix"); return THEMES.includes(t) ? t : "matrix"; };
 
 function applyTheme() {
-  document.documentElement.dataset.theme = theme();
-  $("theme-select").value = theme();
+  const t = theme();
+  document.documentElement.dataset.theme = t;
+  document.documentElement.dataset.family = t === "classic" ? "plain" : "term";
+  document.querySelectorAll(".theme-btn").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.themeChoice === t)));
+  if (!$("lock").classList.contains("hidden")) typeWake();
 }
-$("theme-select").addEventListener("change", (e) => { prefs.set("theme", e.target.value); applyTheme(); });
+document.querySelectorAll(".theme-btn").forEach((b) => b.addEventListener("click", () => {
+  prefs.set("theme", b.dataset.themeChoice);
+  applyTheme();
+}));
 applyTheme();
 
-// "Wake up…" typed on the lock screen in the Matrix theme.
+// A themed greeting typed on the lock screen.
 let wakeTimer = null;
 function typeWake() {
   const box = $("wake");
   clearTimeout(wakeTimer);
   box.textContent = "";
-  if (theme() !== "matrix") return;
-  const lines = state.status && state.status.initialized
-    ? "Wake up…\nThe Matrix has you.\nKnock, knock."
-    : "Wake up…\nFollow the white rabbit.";
+  const init = state.status && state.status.initialized;
+  const now = new Date();
+  const lines = {
+    matrix: init ? "Wake up…\nThe Matrix has you.\nKnock, knock." : "Wake up…\nFollow the white rabbit.",
+    claude: init ? "✻ Welcome back to Private AI!\n  /unlock to continue" : "✻ Welcome to Private AI!\n  /init to create your vault",
+    terminal: `Last login: ${now.toDateString().slice(0, 10)} ${now.toTimeString().slice(0, 8)} on ttys000\n~ % ${init ? "privateai unlock" : "privateai init"}`,
+  }[theme()];
+  if (!lines) return;
   let i = 0;
   const step = () => {
     box.textContent = lines.slice(0, ++i);

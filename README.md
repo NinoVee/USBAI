@@ -103,9 +103,17 @@ Image reader**.
 
 ### Appearance
 
-The default theme is **Matrix**: green on black with terminal type. Switch to
-**Classic** under **Settings → Appearance**. The choice is remembered in this
-browser.
+Pick a theme with the toggle buttons under **Settings → Appearance**. The
+choice is remembered in this browser:
+
+- **Matrix** (default): green on black with terminal type, and a "Wake up…"
+  greeting on the unlock screen.
+- **Claude Code**: warm charcoal and cream with a terracotta accent, plus the ✻
+  mark, `>` prompts and a "✻ Welcome" greeting.
+- **Apple Terminal**: a macOS Terminal window with the red, yellow and green
+  title-bar dots, SF Mono, macOS-blue buttons and a "Last login… on ttys000"
+  greeting.
+- **Classic**: the original light/dark look, which follows the system setting.
 
 ### Faster loading (model cache)
 

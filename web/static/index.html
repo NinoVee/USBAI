@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-theme="matrix">
+<html lang="en" data-theme="matrix" data-family="term">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -196,11 +196,19 @@
       <h3>This computer</h3>
       <dl id="host-info" class="facts"></dl>
       <h3>Appearance</h3>
-      <div class="vision-row">
-        <select id="theme-select" aria-label="Theme">
-          <option value="matrix">Matrix (green on black)</option>
-          <option value="classic">Classic</option>
-        </select>
+      <div class="theme-picker" role="group" aria-label="Theme">
+        <button type="button" class="theme-btn" data-theme-choice="matrix" aria-pressed="false">
+          <span class="swatch matrix">&gt; wake up_</span><span class="name">Matrix</span>
+        </button>
+        <button type="button" class="theme-btn" data-theme-choice="claude" aria-pressed="false">
+          <span class="swatch claude"><b>✻</b>&nbsp;Welcome</span><span class="name">Claude Code</span>
+        </button>
+        <button type="button" class="theme-btn" data-theme-choice="terminal" aria-pressed="false">
+          <span class="swatch terminal">~ % ▍</span><span class="name">Apple Terminal</span>
+        </button>
+        <button type="button" class="theme-btn" data-theme-choice="classic" aria-pressed="false">
+          <span class="swatch classic">Aa</span><span class="name">Classic</span>
+        </button>
       </div>
       <h3>Privacy</h3>
       <p class="muted">No internet, account or API key is used. Prompts, documents, chats and memory never leave this computer and are stored only on the drive, encrypted with your passphrase. Forgetting the passphrase means the data cannot be recovered.</p>
