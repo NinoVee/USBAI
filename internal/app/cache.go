@@ -186,6 +186,9 @@ func (a *App) evictCache(incoming int64) {
 func (a *App) CacheStatus() (names []string, bytes int64) {
 	byKey := map[string]string{}
 	for _, m := range a.cfg.Models {
+		if m.Base != "" {
+			continue
+		}
 		byKey[cacheKey(m.File, m.Size, m.SHA256)] = m.Name
 		if m.MMProj != "" {
 			byKey[cacheKey(m.MMProj, m.MMProjSize, m.MMProjSHA256)] = m.Name + " (image projector)"

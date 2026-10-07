@@ -33,6 +33,10 @@ type Model struct {
 	MMProjURL    string `json:"mmproj_url,omitempty"`
 	MMProjSize   int64  `json:"mmproj_size,omitempty"`
 	MMProjSHA256 string `json:"mmproj_sha256,omitempty"`
+	// Base makes this entry a personality of another model: it uses the
+	// base model's files, and Persona is added to the system prompt.
+	Base    string `json:"base,omitempty"`
+	Persona string `json:"persona,omitempty"`
 	// Prefixes some embedding models (e.g. nomic-embed) expect.
 	QueryPrefix    string `json:"query_prefix,omitempty"`
 	DocumentPrefix string `json:"document_prefix,omitempty"`
@@ -76,7 +80,36 @@ func Load(root string) (Config, error) {
 		return cfg, fmt.Errorf("parse %s: %w", FileName, err)
 	}
 	cfg.Root = root
+	cfg.resolveBases()
 	return cfg, nil
+}
+
+// resolveBases fills personality entries in with their base model's files.
+func (c *Config) resolveBases() {
+	byID := map[string]Model{}
+	for _, m := range c.Models {
+		if m.Base == "" {
+			byID[m.ID] = m
+		}
+	}
+	for i, m := range c.Models {
+		b, ok := byID[m.Base]
+		if m.Base == "" || !ok {
+			continue
+		}
+		m.File, m.URL, m.Size, m.SHA256 = b.File, b.URL, b.Size, b.SHA256
+		m.MMProj, m.MMProjURL, m.MMProjSize, m.MMProjSHA256 = b.MMProj, b.MMProjURL, b.MMProjSize, b.MMProjSHA256
+		if m.Role == "" {
+			m.Role = b.Role
+		}
+		if m.MinRAMGB == 0 {
+			m.MinRAMGB = b.MinRAMGB
+		}
+		if m.Context == 0 {
+			m.Context = b.Context
+		}
+		c.Models[i] = m
+	}
 }
 
 // FindRoot walks up from start looking for config.json. The binaries live in

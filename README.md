@@ -244,6 +244,7 @@ laptop; the R1 distill below is the version that runs locally.
 | `qwen3-14b` | Qwen3 14B Q4_K_M, best quality and the default at 16 GB+ | ~9.0 GB | 16 GB+ |
 | `qwen3-8b` | Qwen3 8B Q4_K_M | ~5 GB | 16 GB+ |
 | `qwen3-vl-4b` | Qwen3-VL 4B Instruct Q4_K_M + mmproj Q8_0, **sees images** | ~2.9 GB | 8 GB+ |
+| `gang` | **GANG**: Qwen3-VL 4B with a hip-hop personality (no extra download) | — | 8 GB+ |
 | `qwen3-4b` | Qwen3 4B Instruct 2507 Q4_K_M | ~2.5 GB | 8 GB+ |
 | `qwen3-vl-2b` | Qwen3-VL 2B Instruct Q4_K_M + mmproj Q8_0, **sees images** | ~1.5 GB | 4 GB+ |
 | `gemma3-12b` | Gemma 3 12B Q4_K_M + mmproj F16, **sees images**, sharpest image reading | ~8.2 GB | 16 GB+ |
@@ -255,6 +256,18 @@ To use any other GGUF model, add an entry to `config.json`. For a vision
 model, also set `mmproj` and `mmproj_url`. When `build-drive.sh` runs on an
 existing drive, it calls `drivetool sync-config`, which adds models introduced
 by updates and keeps your other settings.
+
+### Personalities (GANG)
+
+A model entry can be a *personality* of another model: it sets `base` to that
+model's id and adds a `persona`, which is appended to the system prompt. It
+uses the base model's files, so it costs no disk space. **GANG** is built
+this way on Qwen3-VL 4B: an urban, hip-hop voice that stays articulate,
+detailed and accurate, answers adult questions frankly without lecturing,
+and only declines requests that would seriously help someone hurt people.
+Choose it in Settings → Model. To change GANG's voice, edit its `persona` in
+`config.json` on the drive (and restart), or copy the entry with a new `id`
+to make another personality.
 
 ### Damaged or incomplete model files
 

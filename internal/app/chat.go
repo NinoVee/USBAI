@@ -408,6 +408,9 @@ func (a *App) searchFirst(agent *Agent) bool {
 func (a *App) systemPrompt(agent *Agent) string {
 	var b strings.Builder
 	b.WriteString(a.cfg.SystemPrompt)
+	if _, m, ok := a.chatEngine(); ok && m.Persona != "" {
+		b.WriteString("\n\n" + m.Persona)
+	}
 	if agent != nil {
 		fmt.Fprintf(&b, "\n\nYou are acting as the agent %q.", agent.Name)
 		if agent.Description != "" {

@@ -777,6 +777,9 @@ func verifyDrive(drive string) error {
 		}
 	}
 	for _, m := range cfg.Models {
+		if m.Base != "" {
+			continue // a personality: its files are the base model's
+		}
 		check(m.ID, m.File, m.Size, m.SHA256)
 		if m.MMProj != "" {
 			check(m.ID+" (image projector)", m.MMProj, m.MMProjSize, m.MMProjSHA256)
@@ -821,6 +824,9 @@ func check(drive string) error {
 			} else if cfg.Present(m) {
 				mark += ", image projector missing"
 			}
+		}
+		if m.Base != "" {
+			mark += ", personality of " + m.Base
 		}
 		fmt.Printf("  %-16s %-10s %s\n", m.ID, m.Role, mark)
 	}

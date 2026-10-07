@@ -478,3 +478,36 @@ func TestModelCache(t *testing.T) {
 		t.Fatal("ClearCache left files")
 	}
 }
+
+// TestPersonaModel runs a personality entry: it loads its base model's file
+// and adds its persona to the system prompt.
+func TestPersonaModel(t *testing.T) {
+	root := t.TempDir()
+	host := platform.Detect()
+	host.Accel = nil
+	rt := filepath.Join(root, "runtime", host.Slug()+"-cpu")
+	if out, err := exec.Command("go", "build", "-o", filepath.Join(rt, host.ServerBinary()), "./testdata/fakellama").CombinedOutput(); err != nil {
+		t.Fatalf("build fake server: %v\n%s", err, out)
+	}
+	os.MkdirAll(filepath.Join(root, "models/chat"), 0o755)
+	os.WriteFile(filepath.Join(root, "models/chat/base.gguf"), []byte("GGUF"), 0o644)
+	os.WriteFile(filepath.Join(root, config.FileName), []byte(`{"models":[
+		{"id":"gang","name":"GANG","base":"base","persona":"Your name is GANG."},
+		{"id":"base","name":"Base","role":"chat","file":"models/chat/base.gguf","size":4,"context":4096}]}`), 0o644)
+	cfg, err := config.Load(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if g := cfg.Models[0]; g.File != "models/chat/base.gguf" || g.Role != "chat" || g.Size != 4 || g.Context != 4096 {
+		t.Fatalf("persona not resolved: %+v", g)
+	}
+	a := New(cfg, host, io.Discard)
+	defer a.Stop()
+	a.startChat()
+	if _, m, ok := a.chatEngine(); !ok || m.ID != "gang" {
+		t.Fatalf("chat model %q ready=%v err=%q", m.ID, ok, a.chatErr)
+	}
+	if p := a.systemPrompt(nil); !strings.Contains(p, "Your name is GANG.") {
+		t.Fatalf("persona missing from prompt: %s", p)
+	}
+}
