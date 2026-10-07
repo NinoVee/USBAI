@@ -16,9 +16,9 @@ const ocrMaxTokens = 3000 // a dense page is ~1000 tokens; stops runaway loops
 
 const ocrPrompt = "You are an OCR engine. Transcribe all text on this scanned page exactly as written, in reading order. " +
 	"Keep the paragraphs, headings and line breaks. Write tables as Markdown tables. " +
-	"Write [illegible] for words you cannot read. Note stamps, signatures, handwriting and pictures briefly in [brackets]. " +
-	"Do not correct, summarize or translate. Output only the transcription, with no introduction or comments. " +
-	"If the page is blank, output [blank page]."
+	"Write [illegible] for words you cannot read. " +
+	"Do not correct, summarize or translate, and never add anything that is not on the page. " +
+	"Output only the transcription, with no introduction or comments. If the page is blank, output [blank page]."
 
 // ocrEngine picks the model that reads page images: the chat model when it
 // can see, otherwise the image reader.
