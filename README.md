@@ -88,6 +88,19 @@ projector (`mmproj`) file. The default is Qwen3-VL 4B, with Qwen3-VL 2B for
 low-memory computers. If the active model can't see images, the chat offers
 to switch.
 
+### Image reader (two models at once)
+
+If the chat model can't see images, for example Qwen3 14B or DeepSeek R1, a
+second, smaller vision model can run alongside it as the **image reader**. It
+describes each pasted image, transcribing all the text, and the chat model
+answers from that description, so agents and tools keep using the stronger
+model. Descriptions are saved with the chat, so follow-up questions about the
+image keep working.
+
+It turns on automatically on computers with 16 GB or more of memory, using the
+smallest vision model on the drive. Change or turn it off under **Settings →
+Image reader**.
+
 ### Agents
 
 The **Agents** tab creates assistants with their own:
@@ -148,14 +161,21 @@ Last verified against llama.cpp b11332: all 9 runtimes downloaded. A real
 end-to-end run on Linux x64 (Qwen3 1.7B + nomic-embed) answered questions
 about an uploaded contract with correct citations.
 
-### Default models (all Apache-2.0)
+### Default models
+
+Licenses: Qwen and DeepSeek are Apache-2.0 / MIT. Gemma uses Google's Gemma
+terms. Full DeepSeek R1/V3 (671B parameters, about 400 GB) is too large for a
+laptop; the R1 distill below is the version that runs locally.
 
 | id | model | size | RAM |
 |---|---|---|---|
+| `qwen3-14b` | Qwen3 14B Q4_K_M, best quality and the default at 16 GB+ | ~9.0 GB | 16 GB+ |
 | `qwen3-8b` | Qwen3 8B Q4_K_M | ~5 GB | 16 GB+ |
 | `qwen3-vl-4b` | Qwen3-VL 4B Instruct Q4_K_M + mmproj Q8_0, **sees images** | ~2.9 GB | 8 GB+ |
 | `qwen3-4b` | Qwen3 4B Instruct 2507 Q4_K_M | ~2.5 GB | 8 GB+ |
 | `qwen3-vl-2b` | Qwen3-VL 2B Instruct Q4_K_M + mmproj Q8_0, **sees images** | ~1.5 GB | 4 GB+ |
+| `gemma3-12b` | Gemma 3 12B Q4_K_M + mmproj F16, **sees images**, sharpest image reading | ~8.2 GB | 16 GB+ |
+| `deepseek-r1-8b` | DeepSeek R1 0528 (Qwen3 8B distill), reasons step by step (slower) | ~5.0 GB | 12 GB+ |
 | `qwen3-1.7b` | Qwen3 1.7B Q4_K_M | ~1.1 GB | 4 GB+ |
 | `nomic-embed` | nomic-embed-text v1.5 Q8_0 | ~140 MB | — |
 
