@@ -223,7 +223,8 @@ function emptyState() {
     el("p", { class: "muted" }, "Paste a screenshot (⌘V / Ctrl+V), or drop a PDF, Word or text file anywhere to ask about it. Everything stays on this drive."));
 }
 const currentAgent = () => state.agents.find((a) => a.id === state.agentId);
-const toolLabel = (id) => (state.catalog && (state.catalog.tools.find((t) => t.id === id) || {}).label) || id;
+const extraLabels = { read_image: "Image reader" };
+const toolLabel = (id) => extraLabels[id] || (state.catalog && (state.catalog.tools.find((t) => t.id === id) || {}).label) || id;
 $("new-chat").addEventListener("click", () => { newChat(); $("input").focus(); });
 
 function renderFocus() {
@@ -372,7 +373,7 @@ async function send(text) {
 $("chat-form").addEventListener("submit", (e) => {
   e.preventDefault();
   if (!modelReady() || state.busy) return; // keep the typed text until the model is ready
-  if (state.images.length && !(state.status && state.status.chat_vision)) return; // see the vision note
+  if (state.images.length && !(state.status && state.status.images_ok)) return; // see the vision note
   const text = $("input").value;
   if (!text.trim() && !state.images.length) return;
   $("input").value = "";
@@ -451,8 +452,12 @@ function renderAttachments() {
 function renderVisionNote() {
   const note = $("vision-note");
   const st = state.status;
-  if (!state.images.length || !st || st.chat_vision) { note.classList.add("hidden"); return; }
+  if (!state.images.length || !st || st.images_ok) { note.classList.add("hidden"); return; }
   note.classList.remove("hidden");
+  if (st.vision_state === "starting") {
+    note.replaceChildren(el("span", {}, `The image reader (${st.vision_model}) is still loading — send in a moment.`));
+    return;
+  }
   const vision = (st.models || []).find((m) => m.present && m.vision);
   if (vision) {
     note.replaceChildren(el("span", {}, `${st.chat_model || "This model"} can't see images. ${vision.name} can.`),
@@ -733,6 +738,18 @@ function renderSettings() {
   }
   if (st.chat_error) models.append(el("div", { class: "row error" }, st.chat_error));
 
+  // Image reader.
+  const sel = $("vision-select");
+  if (document.activeElement !== sel) {
+    const choices = (st.models || []).filter((m) => m.present && m.vision && !m.active);
+    sel.replaceChildren(el("option", { value: "" }, "Automatic"), el("option", { value: "off" }, "Off"),
+      ...choices.map((m) => el("option", { value: m.id }, m.name)));
+    sel.value = st.vision_choice || "";
+  }
+  const vs = { ready: `● Running ${st.vision_model}`, starting: `Loading ${st.vision_model}…`,
+    error: `Failed: ${st.vision_error}`, off: `Not running — ${st.vision_error || "off"}` }[st.vision_state] || "";
+  $("vision-status").textContent = vs;
+
   const facts = [
     ["System", `${st.host.os} ${st.host.arch}`],
     ["CPU threads", st.host.cpus],
@@ -761,6 +778,11 @@ $("shutdown").addEventListener("click", async () => {
   clearInterval(poll);
 });
 
+$("vision-select").addEventListener("change", async (e) => {
+  await api("POST", "/api/vision/select", { id: e.target.value });
+  e.target.blur();
+  refreshStatus();
+});
 $("engine-warn-close").addEventListener("click", () => {
   state.dismissedWarn = state.status && state.status.chat_warning;
   $("engine-warn").classList.add("hidden");

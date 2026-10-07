@@ -147,6 +147,8 @@ input[type=range] { padding: 0; }
 .list button { padding: 4px 10px; font-size: 13px; }
 .inline-form { display: flex; gap: 8px; margin-top: 12px; }
 .inline-form input { flex: 1; }
+.vision-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+#vision-select { width: auto; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); }
 .facts { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 0; }
 .facts dt { color: var(--muted); }
 .facts dd { margin: 0; overflow-wrap: anywhere; }

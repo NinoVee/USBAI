@@ -28,6 +28,7 @@ const (
 	StateReady    = "ready"
 	StateError    = "error"
 	StateNoModel  = "no_model"
+	StateOff      = "off"
 )
 
 // App is the running assistant.
@@ -53,6 +54,14 @@ type App struct {
 	embedState  string
 	engGen      int // bumps on every chat-engine restart
 
+	// Image reader: a second, vision-capable model that describes images
+	// when the chat model can't see them.
+	vision      *llama.Server
+	visionModel config.Model
+	visionState string
+	visionErr   string
+	visionGen   int
+
 	// Unlocked user data; nil vault means locked.
 	dataMu sync.RWMutex
 	vault  *vault.Vault
@@ -72,15 +81,16 @@ type App struct {
 func New(cfg config.Config, host platform.Info, log io.Writer) *App {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &App{
-		cfg:        cfg,
-		host:       host,
-		dataDir:    cfg.Path("data"),
-		log:        log,
-		ctx:        ctx,
-		cancel:     cancel,
-		chatState:  StateStarting,
-		embedState: StateStarting,
-		Shutdown:   make(chan struct{}),
+		cfg:         cfg,
+		host:        host,
+		dataDir:     cfg.Path("data"),
+		log:         log,
+		ctx:         ctx,
+		cancel:      cancel,
+		chatState:   StateStarting,
+		embedState:  StateStarting,
+		visionState: StateOff,
+		Shutdown:    make(chan struct{}),
 	}
 }
 
@@ -90,6 +100,8 @@ func (a *App) logf(format string, args ...any) { fmt.Fprintf(a.log, format+"\n",
 // before unlocking.
 type settings struct {
 	ChatModel string `json:"chat_model,omitempty"`
+	// VisionModel picks the image reader: "" automatic, "off", or a model id.
+	VisionModel string `json:"vision_model,omitempty"`
 }
 
 func (a *App) loadSettings() settings {
@@ -301,6 +313,96 @@ func (a *App) startChat() {
 		a.chatWarn = "Using " + a.chatModel.Name + " because:\n" + strings.Join(problems, "\n")
 	}
 	a.logf("Chat model ready: %s (%s)", a.chatModel.Name, rt)
+	go a.startVision()
+}
+
+// visionHelperMinRAMGB is the memory below which an image reader is not
+// started automatically alongside the chat model.
+const visionHelperMinRAMGB = 16
+
+// pickVisionHelper chooses the image-reader model, or explains why none.
+func (a *App) pickVisionHelper(chat config.Model) (config.Model, string) {
+	if a.cfg.Vision(chat) {
+		return config.Model{}, "not needed: " + chat.Name + " can see images itself"
+	}
+	want := a.loadSettings().VisionModel
+	if want == "off" {
+		return config.Model{}, "turned off in Settings"
+	}
+	var usable []config.Model
+	for _, m := range a.cfg.ModelsByRole("chat") {
+		if m.ID != chat.ID && a.cfg.Vision(m) && a.cfg.Check(m) == nil {
+			usable = append(usable, m)
+		}
+	}
+	if want != "" {
+		for _, m := range usable {
+			if m.ID == want {
+				return m, ""
+			}
+		}
+		return config.Model{}, "the chosen image reader is not on this drive"
+	}
+	if len(usable) == 0 {
+		return config.Model{}, "no vision model on this drive"
+	}
+	if ram := a.host.RAMGB(); ram > 0 && ram < visionHelperMinRAMGB {
+		return config.Model{}, fmt.Sprintf("this computer has %d GB of memory; choose an image reader in Settings to run one anyway", ram)
+	}
+	// The smallest vision model: it only has to read images.
+	sort.SliceStable(usable, func(i, j int) bool { return usable[i].Size+usable[i].MMProjSize < usable[j].Size+usable[j].MMProjSize })
+	return usable[0], ""
+}
+
+// startVision starts, keeps or stops the image reader to match the current
+// chat model and settings.
+func (a *App) startVision() {
+	a.engMu.Lock()
+	chat := a.chatModel
+	m, why := a.pickVisionHelper(chat)
+	if a.vision != nil && a.vision.Alive() && why == "" && a.visionModel.ID == m.ID {
+		a.engMu.Unlock()
+		return // already running the right model
+	}
+	a.visionGen++
+	gen := a.visionGen
+	old := a.vision
+	a.vision = nil
+	if why != "" {
+		a.visionModel, a.visionState, a.visionErr = config.Model{}, StateOff, why
+		a.engMu.Unlock()
+		old.Stop()
+		return
+	}
+	a.visionModel, a.visionState, a.visionErr = m, StateStarting, ""
+	a.engMu.Unlock()
+	old.Stop()
+
+	m.Context = 4096 // enough to describe an image
+	srv, _, err := a.startServer(m, false)
+
+	a.engMu.Lock()
+	defer a.engMu.Unlock()
+	if gen != a.visionGen || a.ctx.Err() != nil {
+		srv.Stop()
+		return
+	}
+	if err != nil {
+		a.visionState, a.visionErr = StateError, m.Name+": "+firstLine(err)
+		return
+	}
+	a.vision, a.visionState = srv, StateReady
+	a.logf("Image reader ready: %s", m.Name)
+}
+
+// visionEngine returns the image reader if it is running.
+func (a *App) visionEngine() (string, config.Model, bool) {
+	a.engMu.Lock()
+	defer a.engMu.Unlock()
+	if a.vision == nil || !a.vision.Alive() {
+		return "", config.Model{}, false
+	}
+	return a.vision.BaseURL, a.visionModel, true
 }
 
 // firstLine keeps the informative part of a llama-server failure: the
@@ -383,10 +485,11 @@ func (a *App) Stop() {
 		a.cancel()
 		a.lock()
 		a.engMu.Lock()
-		chat, embed := a.chat, a.embed
-		a.chat, a.embed = nil, nil
+		chat, embed, vision := a.chat, a.embed, a.vision
+		a.chat, a.embed, a.vision = nil, nil, nil
 		a.engMu.Unlock()
 		chat.Stop()
 		embed.Stop()
+		vision.Stop()
 	})
 }

@@ -44,12 +44,14 @@ type MemoryItem struct {
 
 // ChatMessage is one turn of a stored conversation.
 type ChatMessage struct {
-	Role    string     `json:"role"`
-	Content string     `json:"content"`
-	Sources []Source   `json:"sources,omitempty"`
-	Images  []string   `json:"images,omitempty"` // vault image ids
-	Steps   []ToolStep `json:"steps,omitempty"`  // agent tool use
-	Time    time.Time  `json:"time"`
+	Role    string   `json:"role"`
+	Content string   `json:"content"`
+	Sources []Source `json:"sources,omitempty"`
+	Images  []string `json:"images,omitempty"` // vault image ids
+	// ImageNotes are the image reader's descriptions, reused in history.
+	ImageNotes []string   `json:"image_notes,omitempty"`
+	Steps      []ToolStep `json:"steps,omitempty"` // agent tool use
+	Time       time.Time  `json:"time"`
 }
 
 // Source is a document excerpt used to answer.

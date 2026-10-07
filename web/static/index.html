@@ -152,6 +152,12 @@
       <h2>Settings</h2>
       <h3>Model</h3>
       <div id="model-list" class="list"></div>
+      <h3>Image reader</h3>
+      <p class="muted">When the model above can't see images, a second, smaller vision model can read screenshots for it. It describes each image (including all text), and your main model answers. Needs extra memory: on by default with 16 GB or more.</p>
+      <div class="vision-row">
+        <select id="vision-select" aria-label="Image reader"></select>
+        <span id="vision-status" class="muted"></span>
+      </div>
       <h3>This computer</h3>
       <dl id="host-info" class="facts"></dl>
       <h3>Privacy</h3>

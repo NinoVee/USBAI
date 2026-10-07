@@ -7,6 +7,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/ninovee/usbai/internal/config"
 	"github.com/ninovee/usbai/internal/llama"
 	"github.com/ninovee/usbai/internal/rag"
 )
@@ -68,8 +69,16 @@ func (a *App) Chat(req ChatRequest, ev ChatEvents) error {
 	if len(req.Images) > maxImages {
 		return fmt.Errorf("attach at most %d images per message", maxImages)
 	}
-	if len(req.Images) > 0 && !a.cfg.Vision(model) {
-		return errors.New("the current model can't see images — switch to a vision model (e.g. Qwen3 VL) in Settings")
+	// Images go straight to a vision chat model, or through the image
+	// reader when the chat model can't see.
+	direct := a.cfg.Vision(model)
+	var readerURL string
+	var reader config.Model
+	if len(req.Images) > 0 && !direct {
+		var ok bool
+		if readerURL, reader, ok = a.visionEngine(); !ok {
+			return errors.New(a.noVisionReason(model))
+		}
 	}
 	images := make([]decodedImage, 0, len(req.Images))
 	for _, u := range req.Images {
@@ -142,7 +151,9 @@ func (a *App) Chat(req ChatRequest, ev ChatEvents) error {
 	for i := len(chat.Messages) - 1; i >= 0; i-- {
 		m := chat.Messages[i]
 		content := m.Content
-		if len(m.Images) > 0 {
+		if len(m.ImageNotes) > 0 {
+			content = imageNotesText(m.ImageNotes) + content
+		} else if len(m.Images) > 0 {
 			content = fmt.Sprintf("[%d image(s) attached]\n%s", len(m.Images), content)
 		}
 		cost := approxTokens(content)
@@ -155,19 +166,6 @@ func (a *App) Chat(req ChatRequest, ev ChatEvents) error {
 
 	msgs := []llama.Message{{Role: "system", Content: system}}
 	msgs = append(msgs, history...)
-	userText := msg
-	if docContext != "" {
-		userText = "Document excerpts:\n\n" + docContext + "\n\n---\n\nQuestion: " + msg
-	}
-	if len(images) > 0 {
-		parts := []llama.Part{{Type: "text", Text: userText}}
-		for _, img := range images {
-			parts = append(parts, llama.Part{Type: "image_url", ImageURL: &llama.ImageURL{URL: img.dataURL}})
-		}
-		msgs = append(msgs, llama.Message{Role: "user", Content: parts})
-	} else {
-		msgs = append(msgs, llama.Message{Role: "user", Content: userText})
-	}
 
 	// Store images first so the chat can show them even if generation fails.
 	var imageIDs []string
@@ -182,8 +180,45 @@ func (a *App) Chat(req ChatRequest, ev ChatEvents) error {
 		return err
 	}
 
-	var answer strings.Builder
 	var steps []ToolStep
+	var notes []string
+	if len(images) > 0 && !direct {
+		for i, img := range images {
+			ts := ToolStep{Tool: "read_image", Args: fmt.Sprintf("image %d with %s", i+1, reader.Name)}
+			if err := ev.ToolCall(ts); err != nil {
+				return err
+			}
+			desc, err := a.describeImage(readerURL, img, msg)
+			if err != nil {
+				return fmt.Errorf("the image reader failed: %w", err)
+			}
+			notes = append(notes, desc)
+			ts.Result = preview(desc)
+			steps = append(steps, ts)
+			if err := ev.ToolResult(ts); err != nil {
+				return err
+			}
+		}
+	}
+
+	userText := msg
+	if docContext != "" {
+		userText = "Document excerpts:\n\n" + docContext + "\n\n---\n\nQuestion: " + msg
+	}
+	switch {
+	case len(notes) > 0:
+		msgs = append(msgs, llama.Message{Role: "user", Content: imageNotesText(notes) + userText})
+	case len(images) > 0:
+		parts := []llama.Part{{Type: "text", Text: userText}}
+		for _, img := range images {
+			parts = append(parts, llama.Part{Type: "image_url", ImageURL: &llama.ImageURL{URL: img.dataURL}})
+		}
+		msgs = append(msgs, llama.Message{Role: "user", Content: parts})
+	default:
+		msgs = append(msgs, llama.Message{Role: "user", Content: userText})
+	}
+
+	var answer strings.Builder
 	thinking := false
 	onDelta := func(d llama.Delta) error {
 		if d.Reasoning != "" && !thinking {
@@ -254,7 +289,7 @@ func (a *App) Chat(req ChatRequest, ev ChatEvents) error {
 
 	now := time.Now()
 	chat.Messages = append(chat.Messages,
-		ChatMessage{Role: "user", Content: msg, Images: imageIDs, Time: now},
+		ChatMessage{Role: "user", Content: msg, Images: imageIDs, ImageNotes: notes, Time: now},
 		ChatMessage{Role: "assistant", Content: reply, Sources: sources, Steps: steps, Time: now},
 	)
 	chat.Updated = now
@@ -262,6 +297,52 @@ func (a *App) Chat(req ChatRequest, ev ChatEvents) error {
 		return serr
 	}
 	return err
+}
+
+// describeImage asks the image reader for a description detailed enough for
+// a model that can't see the image to answer the user's question.
+func (a *App) describeImage(url string, img decodedImage, question string) (string, error) {
+	msgs := []llama.Message{
+		{Role: "system", Content: "You describe images for another assistant that cannot see them. Be thorough and factual. " +
+			"Transcribe all visible text exactly, including error messages, numbers and labels. Describe the layout, " +
+			"UI elements, charts and tables (with their values), people, objects and anything else relevant. Do not answer the question yourself."},
+		{Role: "user", Content: []llama.Part{
+			{Type: "text", Text: "The user's question about this image: " + question + "\n\nDescribe the image in detail so that question can be answered."},
+			{Type: "image_url", ImageURL: &llama.ImageURL{URL: img.dataURL}},
+		}},
+	}
+	var b strings.Builder
+	_, err := llama.ChatStream(a.ctx, url, msgs, llama.ChatOptions{Temperature: 0.2}, func(d llama.Delta) error {
+		b.WriteString(d.Content)
+		return nil
+	})
+	desc := strings.TrimSpace(stripThink(b.String()))
+	if desc == "" && err == nil {
+		err = errors.New("empty description")
+	}
+	return desc, err
+}
+
+func imageNotesText(notes []string) string {
+	var b strings.Builder
+	for i, n := range notes {
+		fmt.Fprintf(&b, "[Image %d, described by the image reader]\n%s\n\n", i+1, n)
+	}
+	return b.String()
+}
+
+// noVisionReason explains why images can't be read right now.
+func (a *App) noVisionReason(chat config.Model) string {
+	a.engMu.Lock()
+	state, why := a.visionState, a.visionErr
+	a.engMu.Unlock()
+	switch state {
+	case StateStarting:
+		return "the image reader is still loading — try again in a moment"
+	case StateError:
+		return "the image reader failed to start: " + why
+	}
+	return chat.Name + " can't see images (" + why + ") — choose an image reader or a vision model in Settings"
 }
 
 func agentTools(ag *Agent) []string {

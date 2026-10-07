@@ -118,7 +118,12 @@ func main() {
 		}
 
 		reply := fmt.Sprintf("Got %d messages. ", len(req.Messages))
+		system := string(req.Messages[0].Content)
 		switch {
+		case strings.Contains(system, "You describe images") && images > 0:
+			reply = "A screenshot of an error dialog that says ERROR 42."
+		case strings.Contains(last, "described by the image reader"):
+			reply += "Main model read: " + last[strings.Index(last, "A screenshot"):strings.Index(last, "ERROR 42.")+9]
 		case lastMsg.Role == "tool":
 			reply += "Tool said: " + last
 		case images > 0:

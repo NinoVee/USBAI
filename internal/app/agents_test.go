@@ -311,3 +311,93 @@ func TestChatModelFallback(t *testing.T) {
 		}
 	}
 }
+
+// TestImageReader runs a text-only chat model with a vision model as the
+// image reader: images are described by the reader and answered by the
+// chat model, and the description is kept for follow-up turns.
+func TestImageReader(t *testing.T) {
+	root := t.TempDir()
+	host := platform.Detect()
+	host.Accel = nil
+	host.RAMBytes = 24 << 30
+	rt := filepath.Join(root, "runtime", host.Slug()+"-cpu")
+	if out, err := exec.Command("go", "build", "-o", filepath.Join(rt, host.ServerBinary()), "./testdata/fakellama").CombinedOutput(); err != nil {
+		t.Fatalf("build fake server: %v\n%s", err, out)
+	}
+	for _, f := range []string{"models/chat/text.gguf", "models/chat/vl.gguf", "models/chat/mmproj.gguf"} {
+		os.MkdirAll(filepath.Dir(filepath.Join(root, f)), 0o755)
+		os.WriteFile(filepath.Join(root, f), []byte("GGUF"), 0o644)
+	}
+	cfg := config.Default()
+	cfg.Root = root
+	cfg.Models = []config.Model{
+		{ID: "text", Name: "Text 14B", Role: "chat", File: "models/chat/text.gguf", MinRAMGB: 16, Context: 8192},
+		{ID: "vl", Name: "VL 2B", Role: "chat", File: "models/chat/vl.gguf", MMProj: "models/chat/mmproj.gguf", MinRAMGB: 4, Context: 8192},
+	}
+	a := New(cfg, host, io.Discard)
+	defer a.Stop()
+	a.startChat() // starts the image reader in the background once ready
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		if _, m, ok := a.visionEngine(); ok {
+			if m.ID != "vl" {
+				t.Fatalf("image reader is %q", m.ID)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("image reader not ready: %s %s", a.visionState, a.visionErr)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if _, m, _ := a.chatEngine(); m.ID != "text" {
+		t.Fatalf("chat model is %q", m.ID)
+	}
+
+	ln, _ := net.Listen("tcp", "127.0.0.1:0")
+	srv := &http.Server{Handler: a.Handler(fstest.MapFS{}, ln.Addr().(*net.TCPAddr).Port)}
+	go srv.Serve(ln)
+	defer srv.Close()
+	ts := &testServer{t: t, a: a, base: "http://" + ln.Addr().String()}
+	ts.call("POST", "/api/unlock", map[string]any{"passphrase": "test passphrase", "create": true}, nil)
+
+	png, _ := base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=")
+	tr := ts.chat(map[string]any{"message": "what does the error say?", "images": []string{"data:image/png;base64," + base64.StdEncoding.EncodeToString(png)}})
+	if len(tr.events["error"]) > 0 {
+		t.Fatalf("error: %s", tr.events["error"][0])
+	}
+	if !strings.Contains(tr.answer, "Main model read: A screenshot of an error dialog that says ERROR 42.") {
+		t.Fatalf("answer: %q", tr.answer)
+	}
+	if len(tr.events["tool"]) != 1 || !strings.Contains(string(tr.events["tool"][0]), "read_image") {
+		t.Fatalf("expected one read_image step: %v", tr.events["tool"])
+	}
+
+	// The description is stored and reused for follow-ups.
+	var meta struct {
+		ChatID string `json:"chat_id"`
+	}
+	json.Unmarshal(tr.events["meta"][0], &meta)
+	var c Chat
+	ts.call("GET", "/api/chats/"+meta.ChatID, nil, &c)
+	if len(c.Messages[0].ImageNotes) != 1 {
+		t.Fatalf("notes not stored: %+v", c.Messages[0])
+	}
+
+	// Turning the reader off stops it and images are refused with a reason.
+	ts.call("POST", "/api/vision/select", map[string]string{"id": "off"}, nil)
+	deadline = time.Now().Add(10 * time.Second)
+	for {
+		if _, _, ok := a.visionEngine(); !ok {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("image reader still running after turning it off")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	tr = ts.chat(map[string]any{"message": "and this?", "images": []string{"data:image/png;base64," + base64.StdEncoding.EncodeToString(png)}})
+	if len(tr.events["error"]) != 1 || !strings.Contains(string(tr.events["error"][0]), "turned off in Settings") {
+		t.Fatalf("expected a clear refusal, got %v", tr.events)
+	}
+}

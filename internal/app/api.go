@@ -34,6 +34,23 @@ func (a *App) Handler(ui fs.FS, port int) http.Handler {
 		a.shutdownOnce.Do(func() { close(a.Shutdown) })
 	})
 	mux.HandleFunc("POST /api/models/select", a.handleSelectModel)
+	mux.HandleFunc("POST /api/vision/select", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			ID string `json:"id"` // "" automatic, "off", or a model id
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			httpError(w, err)
+			return
+		}
+		s := a.loadSettings()
+		s.VisionModel = body.ID
+		if err := a.saveSettings(s); err != nil {
+			httpError(w, err)
+			return
+		}
+		go a.startVision()
+		writeJSON(w, map[string]bool{"ok": true})
+	})
 	mux.HandleFunc("POST /api/models/retry", func(w http.ResponseWriter, r *http.Request) {
 		go a.startChat()
 		writeJSON(w, map[string]bool{"ok": true})
@@ -176,6 +193,9 @@ func (a *App) handleStatus(w http.ResponseWriter, r *http.Request) {
 		"chat_state":    a.chatState,
 		"chat_error":    a.chatErr,
 		"chat_warning":  a.chatWarn,
+		"vision_state":  a.visionState,
+		"vision_model":  a.visionModel.Name,
+		"vision_error":  a.visionErr,
 		"chat_model":    a.chatModel.Name,
 		"chat_vision":   a.chatModel.ID != "" && a.cfg.Vision(a.chatModel),
 		"chat_runtime":  a.chatRuntime,
@@ -186,6 +206,10 @@ func (a *App) handleStatus(w http.ResponseWriter, r *http.Request) {
 		"supported_ext": rag.SupportedExtensions,
 	}
 	active := a.chatModel.ID
+	// Images work if the chat model sees them, or the image reader is up.
+	st["images_ok"] = (a.chatState == StateReady && a.chatModel.ID != "" && a.cfg.Vision(a.chatModel)) ||
+		(a.visionState == StateReady && a.vision != nil && a.vision.Alive())
+	st["vision_choice"] = a.loadSettings().VisionModel
 	a.engMu.Unlock()
 
 	var models []modelInfo
