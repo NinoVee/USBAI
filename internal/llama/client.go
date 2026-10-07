@@ -72,6 +72,8 @@ type ChatOptions struct {
 	// ToolChoice is "", "auto", "none" or "required" ("required" makes the
 	// model call a tool this round).
 	ToolChoice string
+	// MaxTokens caps the reply length (0 = no cap).
+	MaxTokens int
 }
 
 // ChatStream sends a chat completion request and calls onDelta for each
@@ -82,6 +84,9 @@ func ChatStream(ctx context.Context, baseURL string, msgs []Message, opts ChatOp
 		"messages":    msgs,
 		"stream":      true,
 		"temperature": opts.Temperature,
+	}
+	if opts.MaxTokens > 0 {
+		payload["max_tokens"] = opts.MaxTokens
 	}
 	if len(opts.Tools) > 0 {
 		payload["tools"] = opts.Tools

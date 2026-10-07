@@ -21,6 +21,14 @@ import (
 // ErrUnsupported is returned for file types Extract cannot read.
 var ErrUnsupported = errors.New("unsupported file type")
 
+// ErrScanned means a PDF has no text layer: it is a scan, and its pages
+// must be read with OCR.
+var ErrScanned = errors.New("no text found: this looks like a scanned PDF")
+
+// ErrUnreadablePDF means the PDF parser failed; the pages may still be
+// readable with OCR.
+var ErrUnreadablePDF = errors.New("could not read PDF")
+
 // SupportedExtensions lists the file types Extract understands.
 var SupportedExtensions = []string{".pdf", ".docx", ".txt", ".md", ".markdown", ".csv", ".tsv", ".json", ".html", ".htm", ".xml", ".log", ".rtf"}
 
@@ -54,7 +62,10 @@ func Extract(filename string, data []byte) (string, error) {
 	}
 	text = normalizeSpace(text)
 	if strings.TrimSpace(text) == "" {
-		return "", errors.New("no text found (scanned PDFs need OCR, which is not supported yet)")
+		if ext == ".pdf" {
+			return "", ErrScanned
+		}
+		return "", errors.New("no text found")
 	}
 	return text, nil
 }
@@ -64,12 +75,12 @@ func extractPDF(data []byte) (text string, err error) {
 	// down the app.
 	defer func() {
 		if r := recover(); r != nil {
-			err = fmt.Errorf("could not read PDF: %v", r)
+			err = fmt.Errorf("%w: %v", ErrUnreadablePDF, r)
 		}
 	}()
 	r, err := pdf.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
-		return "", fmt.Errorf("could not read PDF: %w", err)
+		return "", fmt.Errorf("%w: %v", ErrUnreadablePDF, err)
 	}
 	var b strings.Builder
 	for i := 1; i <= r.NumPage(); i++ {

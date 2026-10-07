@@ -154,6 +154,9 @@ input[type=range] { padding: 0; }
 .facts dd { margin: 0; overflow-wrap: anywhere; }
 .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
 
+.ocr-bar { display: flex; align-items: center; gap: 10px; padding: 8px 14px; border-top: 1px solid var(--border); background: var(--surface); font-size: 14px; }
+.ocr-bar #ocr-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.ocr-bar progress { width: 120px; accent-color: var(--accent); }
 .tabs { display: flex; border-top: 1px solid var(--border); background: var(--surface); }
 .tabs button { flex: 1; border: 0; border-radius: 0; background: none; padding: 12px 4px; color: var(--muted); border-top: 2px solid transparent; }
 .tabs button.active { color: var(--accent); border-top-color: var(--accent); }

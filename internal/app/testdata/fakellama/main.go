@@ -134,6 +134,8 @@ func main() {
 		reply := fmt.Sprintf("Got %d messages. ", len(req.Messages))
 		system := string(req.Messages[0].Content)
 		switch {
+		case strings.Contains(system, "You are an OCR engine") && images > 0:
+			reply = "```\nMEMO 7: the budget is $342,500.\n```"
 		case strings.Contains(system, "You describe images") && images > 0:
 			reply = "A screenshot of an error dialog that says ERROR 42."
 		case strings.Contains(last, "described by the image reader"):

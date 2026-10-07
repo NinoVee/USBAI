@@ -514,9 +514,11 @@ async function upload(files, focusAfter) {
   const fd = new FormData();
   for (const f of files) fd.append("file", f, f.name);
   status.textContent = `Reading and indexing ${files.length} file(s) locally…`;
+  let scanned = [];
   try {
     const results = await api("POST", "/api/docs", fd);
-    const errors = results.filter((r) => r.error);
+    scanned = results.filter((r) => r.needs_ocr).map((r) => files.find((f) => f.name === r.name)).filter(Boolean);
+    const errors = results.filter((r) => r.error && !r.needs_ocr);
     status.textContent = errors.length ? errors.map((r) => `${r.name}: ${r.error}`).join(" · ") : "";
     if (focusAfter) {
       for (const r of results) if (r.doc) state.focus.set(r.doc.id, r.doc.name);
@@ -526,6 +528,110 @@ async function upload(files, focusAfter) {
   } catch (err) {
     status.textContent = err.message;
     if (focusAfter) addMessage("assistant", "⚠ " + err.message);
+  }
+  if (state.view === "files") renderDocs();
+  for (const f of scanned) await readScanned(f, focusAfter);
+}
+
+// ---- Scanned PDFs ----
+// A scanned PDF has no text, only page pictures (and some PDFs can't be
+// parsed on the server). Each page is drawn here
+// with the bundled pdf.js and read by the vision model (POST /api/ocr);
+// then the file is stored with that text. Nothing leaves this computer.
+
+const OCR_MAX_PAGES = 300;
+const OCR_PAGE_PX = 1600; // long side of each page image
+let pdfjsLib = null;
+let ocrStop = null;
+
+async function loadPdfjs() {
+  if (!pdfjsLib) {
+    pdfjsLib = await import("./pdfjs/pdf.min.mjs");
+    pdfjsLib.GlobalWorkerOptions.workerSrc = "./pdfjs/pdf.worker.min.mjs";
+  }
+  return pdfjsLib;
+}
+
+async function pageImage(pdf, n) {
+  const page = await pdf.getPage(n);
+  const base = page.getViewport({ scale: 1 });
+  const viewport = page.getViewport({ scale: Math.min(OCR_PAGE_PX / Math.max(base.width, base.height), 4) });
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(viewport.width);
+  canvas.height = Math.round(viewport.height);
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  await page.render({ canvasContext: ctx, viewport }).promise;
+  page.cleanup();
+  return canvas.toDataURL("image/jpeg", 0.85);
+}
+
+function ocrProgress(text, value, max) {
+  $("ocr-bar").classList.toggle("hidden", text == null);
+  if (text == null) return;
+  $("ocr-text").textContent = text;
+  $("ocr-prog").max = max || 1;
+  $("ocr-prog").value = value || 0;
+}
+$("ocr-stop").addEventListener("click", () => { if (ocrStop) ocrStop(); });
+
+function fmtDuration(ms) {
+  const m = Math.round(ms / 60000);
+  return m < 1 ? "under a minute" : m === 1 ? "about 1 minute" : `about ${m} minutes`;
+}
+
+async function readScanned(file, focusAfter) {
+  const status = $("upload-status");
+  const say = (msg) => { status.textContent = msg; if (focusAfter) addMessage("assistant", msg); };
+  let pdf;
+  try {
+    const lib = await loadPdfjs();
+    pdf = await lib.getDocument({ data: new Uint8Array(await file.arrayBuffer()), isEvalSupported: false }).promise;
+  } catch (err) {
+    say(`⚠ ${file.name}: couldn't open the PDF (${err.message})`);
+    return;
+  }
+  const pages = Math.min(pdf.numPages, OCR_MAX_PAGES);
+  let stopped = false;
+  ocrStop = () => { stopped = true; ocrProgress(`Stopping after this page…`, 0, 1); };
+  const parts = [];
+  let model = "";
+  const started = Date.now();
+  try {
+    for (let n = 1; n <= pages && !stopped; n++) {
+      const eta = n > 1 ? ` — ${fmtDuration(((Date.now() - started) / (n - 1)) * (pages - n + 1))} left` : "";
+      ocrProgress(`📄 Reading ${file.name} from its page images: page ${n} of ${pages}${model ? " with " + model : ""}${eta}`, n - 1, pages);
+      const r = await api("POST", "/api/ocr", { image: await pageImage(pdf, n) });
+      model = r.model;
+      parts.push(`--- Page ${n} ---\n${r.text}`);
+    }
+  } catch (err) {
+    ocrProgress(null);
+    say(`⚠ ${file.name}: ${err.message}`);
+    return;
+  } finally {
+    ocrStop = null;
+    pdf.destroy();
+  }
+  ocrProgress(null);
+  if (stopped) { say(`Stopped reading ${file.name}; nothing was saved.`); return; }
+  const fd = new FormData();
+  fd.append("ocr_text", parts.join("\n\n"));
+  fd.append("ocr_model", model);
+  fd.append("file", file, file.name);
+  try {
+    const [r] = await api("POST", "/api/docs", fd);
+    if (r.error) throw new Error(r.error);
+    const more = pdf.numPages > pages ? ` (only the first ${pages} of ${pdf.numPages} pages)` : "";
+    status.textContent = `Read ${pages} scanned page(s) of ${file.name} with ${model}${more}.`;
+    if (focusAfter) {
+      state.focus.set(r.doc.id, r.doc.name);
+      renderFocus();
+      addMessage("assistant", `✓ Read ${pages} scanned page(s) of **${file.name}** with ${model}${more}. Ask your question.`);
+    }
+  } catch (err) {
+    say(`⚠ ${file.name}: ${err.message}`);
   }
   if (state.view === "files") renderDocs();
 }
@@ -544,7 +650,7 @@ async function renderDocs() {
   for (const d of docs) {
     list.append(el("li", {},
       el("div", { class: "grow" }, d.name,
-        el("div", { class: "sub" }, `${fmtSize(d.size)} · ${d.pieces} sections · ${d.embedded ? "semantic + keyword search" : "keyword search"} · ${fmtDate(d.added)}`)),
+        el("div", { class: "sub" }, `${fmtSize(d.size)} · ${d.ocr ? "scan read by " + d.ocr + " · " : ""}${d.pieces} sections · ${d.embedded ? "semantic + keyword search" : "keyword search"} · ${fmtDate(d.added)}`)),
       el("button", { onclick: () => { state.focus.set(d.id, d.name); renderFocus(); show("chat"); } }, "Ask"),
       el("button", { onclick: () => window.open("/api/docs/" + d.id + "/file", "_blank", "noopener") }, "Open"),
       el("button", { class: "danger", onclick: async () => {

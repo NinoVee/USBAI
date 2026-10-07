@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/ninovee/usbai/internal/llama"
 	"github.com/ninovee/usbai/internal/rag"
@@ -26,13 +27,15 @@ import (
 
 // DocMeta describes an uploaded document.
 type DocMeta struct {
-	ID       string    `json:"id"`
-	Name     string    `json:"name"`
-	Size     int       `json:"size"`
-	Chars    int       `json:"chars"`
-	Pieces   int       `json:"pieces"`
-	Embedded bool      `json:"embedded"`
-	Added    time.Time `json:"added"`
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Size     int    `json:"size"`
+	Chars    int    `json:"chars"`
+	Pieces   int    `json:"pieces"`
+	Embedded bool   `json:"embedded"`
+	// OCR names the vision model that read a scanned document, if any.
+	OCR   string    `json:"ocr,omitempty"`
+	Added time.Time `json:"added"`
 }
 
 // MemoryItem is a fact the user asked the assistant to remember.
@@ -181,16 +184,33 @@ func (a *App) embedTexts(texts []string, prefix string) ([][]float32, bool, erro
 
 // AddDocument extracts, chunks, embeds and stores a document.
 func (a *App) AddDocument(name string, data []byte) (DocMeta, error) {
+	return a.addDocument(name, data, "", "")
+}
+
+// AddScannedDocument stores a scanned document with the text a vision
+// model read from its pages (see OCRPage).
+func (a *App) AddScannedDocument(name string, data []byte, text, model string) (DocMeta, error) {
+	if strings.TrimSpace(text) == "" {
+		return DocMeta{}, errors.New("no text was read from the pages")
+	}
+	if !utf8.ValidString(text) {
+		text = strings.ToValidUTF8(text, "�")
+	}
+	return a.addDocument(name, data, text, model)
+}
+
+func (a *App) addDocument(name string, data []byte, text, ocrModel string) (DocMeta, error) {
 	v, err := a.unlocked()
 	if err != nil {
 		return DocMeta{}, err
 	}
-	text, err := rag.Extract(name, data)
-	if err != nil {
-		return DocMeta{}, err
+	if text == "" {
+		if text, err = rag.Extract(name, data); err != nil {
+			return DocMeta{}, err
+		}
 	}
 	chunks := rag.Chunk(text, chunkSize, chunkOverlap)
-	meta := DocMeta{ID: newID(), Name: name, Size: len(data), Chars: len([]rune(text)), Pieces: len(chunks), Added: time.Now()}
+	meta := DocMeta{ID: newID(), Name: name, Size: len(data), Chars: len([]rune(text)), Pieces: len(chunks), OCR: ocrModel, Added: time.Now()}
 
 	_, em, _ := a.embedEngine()
 	vecs, embedded, err := a.embedTexts(chunks, em.DocumentPrefix)

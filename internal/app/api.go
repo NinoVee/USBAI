@@ -102,6 +102,21 @@ func (a *App) Handler(ui fs.FS, port int) http.Handler {
 		respond(w)(a.Documents())
 	})
 	mux.HandleFunc("POST /api/docs", a.handleUpload)
+	mux.HandleFunc("POST /api/ocr", func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Image string `json:"image"`
+		}
+		if err := json.NewDecoder(io.LimitReader(r.Body, maxImageBytes*4/3+(1<<20))).Decode(&req); err != nil {
+			httpError(w, err)
+			return
+		}
+		text, model, err := a.OCRPage(req.Image)
+		if err != nil {
+			httpError(w, err)
+			return
+		}
+		writeJSON(w, map[string]string{"text": text, "model": model})
+	})
 	mux.HandleFunc("GET /api/docs/{id}/file", a.handleDocFile)
 	mux.HandleFunc("DELETE /api/docs/{id}", func(w http.ResponseWriter, r *http.Request) {
 		if err := validID(r.PathValue("id")); err != nil {
@@ -221,7 +236,7 @@ func guard(next http.Handler, port int) http.Handler {
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("Content-Security-Policy",
-			"default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'")
+			"default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'")
 		next.ServeHTTP(w, r)
 	})
 }
@@ -353,8 +368,13 @@ func (a *App) handleUpload(w http.ResponseWriter, r *http.Request) {
 		Name  string   `json:"name"`
 		Doc   *DocMeta `json:"doc,omitempty"`
 		Error string   `json:"error,omitempty"`
+		// NeedsOCR marks a scanned (or unparseable) PDF: the browser reads its pages
+		// with POST /api/ocr and uploads it again with ocr_text.
+		NeedsOCR bool `json:"needs_ocr,omitempty"`
 	}
 	var results []result
+	// ocr_text and ocr_model fields apply to the file part after them.
+	var ocrText, ocrModel string
 	for {
 		part, err := mr.NextPart()
 		if err == io.EOF {
@@ -363,6 +383,20 @@ func (a *App) handleUpload(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			httpError(w, err)
 			return
+		}
+		if f := part.FormName(); f == "ocr_text" || f == "ocr_model" {
+			b, err := io.ReadAll(io.LimitReader(part, 32<<20))
+			part.Close()
+			if err != nil {
+				httpError(w, err)
+				return
+			}
+			if f == "ocr_text" {
+				ocrText = string(b)
+			} else {
+				ocrModel = strings.TrimSpace(string(b))
+			}
+			continue
 		}
 		name := filepath.Base(strings.ReplaceAll(part.FileName(), "\\", "/"))
 		if part.FormName() != "file" || name == "" || name == "." {
@@ -375,13 +409,22 @@ func (a *App) handleUpload(w http.ResponseWriter, r *http.Request) {
 			httpError(w, err)
 			return
 		}
-		meta, err := a.AddDocument(name, data)
+		var meta DocMeta
+		if ocrText != "" {
+			if ocrModel == "" {
+				ocrModel = "a vision model"
+			}
+			meta, err = a.AddScannedDocument(name, data, ocrText, ocrModel)
+			ocrText, ocrModel = "", ""
+		} else {
+			meta, err = a.AddDocument(name, data)
+		}
 		if err != nil {
 			if errors.Is(err, errLocked) {
 				httpError(w, err)
 				return
 			}
-			results = append(results, result{Name: name, Error: err.Error()})
+			results = append(results, result{Name: name, Error: err.Error(), NeedsOCR: errors.Is(err, rag.ErrScanned) || errors.Is(err, rag.ErrUnreadablePDF)})
 			continue
 		}
 		results = append(results, result{Name: name, Doc: &meta})

@@ -148,7 +148,7 @@
         <h2>Files</h2>
         <label class="button primary">Add files<input type="file" id="file-input" multiple hidden></label>
       </div>
-      <p class="muted">Files are encrypted onto the drive and indexed for search. Supported: <span id="exts"></span></p>
+      <p class="muted">Files are encrypted onto the drive and indexed for search. Supported: <span id="exts"></span>. Scanned PDFs are read page by page by your vision model.</p>
       <div id="upload-status" class="muted"></div>
       <ul id="doc-list" class="list"></ul>
     </div>
@@ -219,6 +219,12 @@
       </div>
     </div>
   </section>
+
+  <div id="ocr-bar" class="ocr-bar hidden" role="status">
+    <span id="ocr-text"></span>
+    <progress id="ocr-prog" value="0" max="1"></progress>
+    <button type="button" id="ocr-stop">Stop</button>
+  </div>
 
   <nav class="tabs hidden" id="tabs">
     <button data-view="chat" class="active">Chat</button>
