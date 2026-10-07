@@ -34,6 +34,9 @@ const (
 
 // App is the running assistant.
 type App struct {
+	// Version is the build version shown in Settings.
+	Version string
+
 	cfg     config.Config
 	host    platform.Info
 	dataDir string

@@ -813,6 +813,7 @@ function renderSettings() {
   $("cache-clear").classList.toggle("hidden", !st.cache_bytes);
 
   const facts = [
+    ["Private AI version", st.version || "dev"],
     ["System", `${st.host.os} ${st.host.arch}`],
     ["CPU threads", st.host.cpus],
     ["Memory", ram ? ram + " GB" : "unknown"],

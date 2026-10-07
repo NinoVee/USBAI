@@ -278,6 +278,7 @@ func (a *App) handleStatus(w http.ResponseWriter, r *http.Request) {
 	st["cache_names"], st["cache_bytes"] = a.CacheStatus()
 	st["cache_dir"] = a.cacheDir()
 	st["host"] = a.host
+	st["version"] = a.Version
 	st["initialized"] = a.Initialized()
 	a.dataMu.RLock()
 	st["locked"] = a.vault == nil

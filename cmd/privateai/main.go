@@ -89,6 +89,7 @@ func run() error {
 	url := fmt.Sprintf("http://127.0.0.1:%d/", port)
 
 	a := app.New(cfg, host, os.Stdout)
+	a.Version = version
 	a.StartEngines()
 	srv := &http.Server{Handler: a.Handler(web.FS(), port), ReadHeaderTimeout: 10 * time.Second}
 	go func() {
