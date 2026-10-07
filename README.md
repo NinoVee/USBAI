@@ -257,6 +257,12 @@ model, also set `mmproj` and `mmproj_url`. When `build-drive.sh` runs on an
 existing drive, it calls `drivetool sync-config`, which adds models introduced
 by updates and keeps your other settings.
 
+To **update a drive you already use**, shut Private AI down and run
+`scripts/update-drive.sh "/Volumes/GANG AI"` (with your drive's path). It
+rebuilds the programs, copies them and the launchers to the drive, and adds
+new model entries to the drive's `config.json`. Models and your data are
+untouched.
+
 ### Personalities (GANG)
 
 A model entry can be a *personality* of another model: it sets `base` to that
