@@ -166,3 +166,85 @@ input[type=range] { padding: 0; }
   .msg { max-width: 100%; }
   .tabs button { font-size: 13px; }
 }
+
+/* ---- Matrix theme (default) ----------------------------------------- */
+/* Phosphor green on black, terminal type, and "digital rain" behind the UI. */
+:root[data-theme="matrix"] {
+  --bg: #000;
+  --surface: rgba(0, 12, 3, 0.88);
+  --surface-2: rgba(0, 40, 10, 0.9);
+  --text: #b8ffc8;
+  --muted: #3fbf5f;
+  --border: #0e4a1c;
+  --accent: #00ff41;
+  --accent-text: #000;
+  --danger: #ff5c5c;
+  --ok: #00ff41;
+  --warn: #d4ff3a;
+  --user: rgba(0, 255, 65, 0.09);
+  --glow: 0 0 6px rgba(0, 255, 65, 0.55), 0 0 18px rgba(0, 255, 65, 0.18);
+  --radius: 4px;
+  font-family: "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  color-scheme: dark;
+}
+:root[data-theme="matrix"] body { background: #000; font-size: 14px; }
+#rain { position: fixed; inset: 0; z-index: -1; pointer-events: none; opacity: 0.22; }
+:root[data-theme="matrix"] #app { position: relative; }
+
+:root[data-theme="matrix"] .title { color: var(--accent); text-shadow: var(--glow); letter-spacing: .3em; }
+:root[data-theme="matrix"] .title::after { content: "_"; animation: blink 1s steps(2) infinite; margin-left: 2px; }
+:root[data-theme="matrix"] .tagline { color: var(--muted); letter-spacing: .15em; text-transform: uppercase; }
+:root[data-theme="matrix"] .top,
+:root[data-theme="matrix"] .tabs,
+:root[data-theme="matrix"] .composer { background: rgba(0, 0, 0, 0.82); backdrop-filter: blur(2px); }
+:root[data-theme="matrix"] h1,
+:root[data-theme="matrix"] h2,
+:root[data-theme="matrix"] h3 { color: var(--accent); text-shadow: var(--glow); font-weight: 600; }
+:root[data-theme="matrix"] .empty h2::before { content: "> "; }
+
+:root[data-theme="matrix"] .msg.assistant { border-color: var(--border); box-shadow: inset 2px 0 0 var(--accent); }
+:root[data-theme="matrix"] .msg.user { border: 1px solid var(--border); color: #e4ffe9; }
+:root[data-theme="matrix"] .msg.assistant .body strong { color: var(--accent); }
+:root[data-theme="matrix"] .msg pre { background: rgba(0, 30, 8, 0.95); border: 1px solid var(--border); }
+
+:root[data-theme="matrix"] input,
+:root[data-theme="matrix"] textarea,
+:root[data-theme="matrix"] select { background: rgba(0, 10, 2, 0.92); border-color: var(--border); caret-color: var(--accent); }
+:root[data-theme="matrix"] input:focus,
+:root[data-theme="matrix"] textarea:focus { outline: 1px solid var(--accent); box-shadow: var(--glow); }
+:root[data-theme="matrix"] ::placeholder { color: #2c8a45; }
+:root[data-theme="matrix"] button,
+:root[data-theme="matrix"] .button { background: transparent; border-color: var(--border); color: var(--text); }
+:root[data-theme="matrix"] button:hover,
+:root[data-theme="matrix"] .button:hover { border-color: var(--accent); color: var(--accent); box-shadow: var(--glow); }
+:root[data-theme="matrix"] .primary { background: var(--accent); color: #000; border-color: var(--accent); font-weight: 700; }
+:root[data-theme="matrix"] .primary:hover { color: #000; background: #5dff85; }
+:root[data-theme="matrix"] .danger { color: var(--danger); }
+:root[data-theme="matrix"] .link { background: none; border: 0; box-shadow: none; color: var(--accent); }
+:root[data-theme="matrix"] .tabs button { background: none; border-color: transparent; box-shadow: none; text-transform: uppercase; letter-spacing: .08em; font-size: 12px; }
+:root[data-theme="matrix"] .tabs button.active { color: var(--accent); border-top-color: var(--accent); text-shadow: var(--glow); }
+:root[data-theme="matrix"] .pill { background: rgba(0, 30, 8, 0.9); border: 1px solid var(--border); }
+:root[data-theme="matrix"] .pill.ready { color: var(--accent); text-shadow: var(--glow); }
+:root[data-theme="matrix"] .card,
+:root[data-theme="matrix"] .list li,
+:root[data-theme="matrix"] .list .row { background: var(--surface); border-color: var(--border); }
+:root[data-theme="matrix"] .list .row.active { border-color: var(--accent); box-shadow: var(--glow); }
+:root[data-theme="matrix"] .chip { background: rgba(0, 255, 65, 0.1); border: 1px solid var(--border); }
+:root[data-theme="matrix"] .drop { background: rgba(0, 255, 65, 0.08); color: var(--accent); text-shadow: var(--glow); }
+:root[data-theme="matrix"] a { color: var(--accent); }
+:root[data-theme="matrix"] ::selection { background: var(--accent); color: #000; }
+:root[data-theme="matrix"] ::-webkit-scrollbar { width: 8px; height: 8px; }
+:root[data-theme="matrix"] ::-webkit-scrollbar-thumb { background: #0e4a1c; border-radius: 4px; }
+:root[data-theme="matrix"] ::-webkit-scrollbar-track { background: transparent; }
+.wake { color: var(--accent); text-shadow: var(--glow); min-height: 1.5em; margin: 0 0 8px; white-space: pre; }
+.wake:empty { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  :root[data-theme="matrix"] .title::after { animation: none; }
+}
+:root[data-theme="matrix"] .pane,
+:root[data-theme="matrix"] .messages { background: rgba(0, 0, 0, 0.72); }
+:root[data-theme="matrix"] select { color: var(--text); border: 1px solid var(--border); border-radius: var(--radius); padding: 6px 8px; }
+:root[data-theme="matrix"] input[type=checkbox],
+:root[data-theme="matrix"] input[type=radio],
+:root[data-theme="matrix"] input[type=range] { accent-color: var(--accent); }
+#theme-select { width: auto; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); }

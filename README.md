@@ -101,6 +101,15 @@ It turns on automatically on computers with 16 GB or more of memory, using the
 smallest vision model on the drive. Change or turn it off under **Settings →
 Image reader**.
 
+### Appearance
+
+The default theme is **Matrix**: green on black, terminal type, and the
+falling "digital rain" behind the interface. The rain is drawn at about 18
+frames per second, pauses when the tab is hidden, and stays off if the
+computer's *Reduce motion* setting is on. Switch to **Classic** or turn the
+rain off under **Settings → Appearance**. The choice is remembered in this
+browser.
+
 ### Faster loading (model cache)
 
 Load time is mostly the drive reading the model file, which can be 7–9 GB.

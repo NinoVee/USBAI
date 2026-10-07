@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="matrix">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -9,6 +9,7 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
+<canvas id="rain" aria-hidden="true"></canvas>
 <div id="app">
   <header class="top">
     <div class="brand">
@@ -21,6 +22,7 @@
   <!-- Lock screen -->
   <section id="lock" class="screen hidden">
     <div class="card narrow">
+      <p id="wake" class="wake" aria-hidden="true"></p>
       <h1 id="lock-title">Unlock</h1>
       <p id="lock-help" class="muted"></p>
       <form id="lock-form">
@@ -173,6 +175,14 @@
       </div>
       <h3>This computer</h3>
       <dl id="host-info" class="facts"></dl>
+      <h3>Appearance</h3>
+      <div class="vision-row">
+        <select id="theme-select" aria-label="Theme">
+          <option value="matrix">Matrix (green on black)</option>
+          <option value="classic">Classic</option>
+        </select>
+        <label class="toggle"><input type="checkbox" id="rain-on" checked> Digital rain</label>
+      </div>
       <h3>Privacy</h3>
       <p class="muted">No internet, account or API key is used. Prompts, documents, chats and memory never leave this computer and are stored only on the drive, encrypted with your passphrase. Forgetting the passphrase means the data cannot be recovered.</p>
       <div class="actions">
