@@ -58,8 +58,8 @@ func Default() Config {
 		ListenPort:  8740,
 		OpenBrowser: true,
 		GPULayers:   99,
-		SystemPrompt: "You are Private AI, a helpful assistant running entirely offline on the user's own drive. " +
-			"Nothing the user says or shares leaves this computer. Be accurate and concise. " +
+		SystemPrompt: "You are Private AI, a helpful assistant that runs on the user's own drive. " +
+			"The user's chats, documents and memory stay on this computer. Be accurate and concise. " +
 			"When document excerpts are provided, base your answer on them and cite the document name; " +
 			"if they do not contain the answer, say so.",
 	}

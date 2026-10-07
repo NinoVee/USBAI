@@ -688,6 +688,8 @@ async function editAgent(a) {
   $("agent-tools").replaceChildren(...(state.catalog ? state.catalog.tools : []).map((t) =>
     el("label", {}, el("input", { type: "checkbox", value: t.id, ...((ag.tools || []).includes(t.id) ? { checked: "" } : {}) }),
       el("span", {}, t.label, el("small", {}, t.description)))));
+  $("agent-search-first").checked = !!ag.search_first;
+  syncSearchFirst();
   document.querySelectorAll("input[name=knowledge]").forEach((r) => { r.checked = r.value === (ag.knowledge || "all"); });
   const docs = (await api("GET", "/api/docs")) || [];
   $("agent-docs").replaceChildren(...(docs.length ? docs.map((d) =>
@@ -698,6 +700,15 @@ async function editAgent(a) {
   $("agent-name").focus();
   $("agent-form-wrap").scrollIntoView({ block: "start", behavior: "smooth" });
 }
+// "Always search the web" only makes sense with the web search tool.
+function syncSearchFirst() {
+  const web = document.querySelector('#agent-tools input[value="web_search"]');
+  const on = !!(web && web.checked);
+  $("agent-search-first").disabled = !on;
+  if (!on) $("agent-search-first").checked = false;
+  $("agent-search-first").parentElement.classList.toggle("muted", !on);
+}
+$("agent-tools").addEventListener("change", syncSearchFirst);
 function syncKnowledge() {
   const k = document.querySelector("input[name=knowledge]:checked").value;
   $("agent-docs").classList.toggle("hidden", k !== "selected");
@@ -719,6 +730,7 @@ $("agent-form").addEventListener("submit", async (e) => {
     knowledge: document.querySelector("input[name=knowledge]:checked").value,
     doc_ids: checked("#agent-docs"),
     temperature: parseFloat($("agent-temp").value),
+    search_first: $("agent-search-first").checked,
   };
   try {
     await api("POST", "/api/agents", body);

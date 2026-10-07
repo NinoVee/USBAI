@@ -162,6 +162,12 @@ internet access is on *and* the agent has the 🌐 *Search the web* or *Read web
 pages* tools. Those agents show a 🌐 badge, and the **Web Researcher** template
 sets one up.
 
+Small models often answer "I can't access current information" instead of
+searching. An agent's **🌐 Always search the web before answering** option
+fixes that: the first step of every answer is then a forced web search (via
+llama.cpp's `tool_choice: "required"`). The Web Researcher template has it on.
+The plain *Private AI* chat never goes online; it suggests a web agent instead.
+
 Safety:
 - **What is sent:** only the search words or page address. Chats, files and
   memory are never sent.

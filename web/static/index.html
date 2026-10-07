@@ -116,6 +116,7 @@
           <fieldset>
             <legend>Tools it may use</legend>
             <div id="agent-tools" class="checks"></div>
+            <label class="toggle search-first"><input type="checkbox" id="agent-search-first"> 🌐 Always search the web before answering</label>
           </fieldset>
           <fieldset>
             <legend>Documents it can see</legend>
@@ -211,7 +212,7 @@
         </button>
       </div>
       <h3>Privacy</h3>
-      <p class="muted">No internet, account or API key is used. Prompts, documents, chats and memory never leave this computer and are stored only on the drive, encrypted with your passphrase. Forgetting the passphrase means the data cannot be recovered.</p>
+      <p class="muted">Nothing goes online unless you switch on Internet access in Agents and give an agent the 🌐 web tools; then only its search words and page addresses are sent. Prompts, documents, chats and memory never leave this computer and are stored only on the drive, encrypted with your passphrase. Forgetting the passphrase means the data cannot be recovered.</p>
       <div class="actions">
         <button id="lock-now">Lock</button>
         <button id="shutdown" class="danger">Shut down (before removing drive)</button>

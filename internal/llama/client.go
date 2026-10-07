@@ -69,6 +69,9 @@ type Delta struct {
 type ChatOptions struct {
 	Temperature float64
 	Tools       []Tool
+	// ToolChoice is "", "auto", "none" or "required" ("required" makes the
+	// model call a tool this round).
+	ToolChoice string
 }
 
 // ChatStream sends a chat completion request and calls onDelta for each
@@ -82,6 +85,9 @@ func ChatStream(ctx context.Context, baseURL string, msgs []Message, opts ChatOp
 	}
 	if len(opts.Tools) > 0 {
 		payload["tools"] = opts.Tools
+		if opts.ToolChoice != "" {
+			payload["tool_choice"] = opts.ToolChoice
+		}
 	}
 	body, _ := json.Marshal(payload)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/v1/chat/completions", bytes.NewReader(body))

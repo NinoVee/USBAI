@@ -72,6 +72,7 @@ func main() {
 			Tools []struct {
 				Function struct{ Name string }
 			}
+			ToolChoice string `json:"tool_choice"`
 		}
 		json.NewDecoder(r.Body).Decode(&req)
 		lastMsg := req.Messages[len(req.Messages)-1]
@@ -97,6 +98,19 @@ func main() {
 			b, _ := json.Marshal(map[string]any{"choices": []any{map[string]any{"delta": delta}}})
 			fmt.Fprintf(w, "data: %s\n\n", b)
 			w.(http.Flusher).Flush()
+		}
+
+		// tool_choice "required" calls the first offered tool with the
+		// user's words as the query; it records which tools were offered.
+		if req.ToolChoice == "required" && lastMsg.Role == "user" && len(req.Tools) > 0 {
+			var offered []string
+			for _, t := range req.Tools {
+				offered = append(offered, t.Function.Name)
+			}
+			args, _ := json.Marshal(map[string]string{"query": last, "offered": strings.Join(offered, ",")})
+			send(map[string]any{"tool_calls": []any{map[string]any{"index": 0, "id": "r1", "function": map[string]any{"name": req.Tools[0].Function.Name, "arguments": string(args)}}}})
+			fmt.Fprint(w, "data: [DONE]\n\n")
+			return
 		}
 
 		// "calc: EXPR" asks for the calculator tool when it is offered;

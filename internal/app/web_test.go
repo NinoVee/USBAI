@@ -178,3 +178,55 @@ func TestWebSettingsAPIHidesKey(t *testing.T) {
 func toolCall(name, args string) llama.ToolCall {
 	return llama.ToolCall{ID: "t1", Type: "function", Function: llama.FunctionCall{Name: name, Arguments: args}}
 }
+
+func TestSearchFirstAgent(t *testing.T) {
+	ddg := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(ddgPage))
+	}))
+	defer ddg.Close()
+	withEndpoints(t, ddg.URL, "")
+	ts := newTestServer(t)
+	a := ts.a
+
+	var ag Agent
+	ts.call("POST", "/api/agents", Agent{Name: "Research", Tools: []string{"search_documents", "web_search", "read_webpage"},
+		Knowledge: "all", SearchFirst: true}, &ag)
+	if !ag.SearchFirst {
+		t.Fatal("search_first not saved")
+	}
+
+	// Internet off: no forced search, and the prompt says why.
+	if a.searchFirst(&ag) || !strings.Contains(a.systemPrompt(&ag), "switched off") {
+		t.Fatal("search forced while internet is off")
+	}
+	tr := ts.chat(map[string]any{"agent_id": ag.ID, "message": "latest news"})
+	if len(tr.events["tool"]) != 0 {
+		t.Fatalf("tool used while offline: %v", tr.events["tool"])
+	}
+
+	// Internet on: the first round must call web_search, and only it is offered.
+	a.SaveWebSettings(WebSettings{DuckDuckGo: true})
+	p := a.systemPrompt(&ag)
+	if !strings.Contains(p, "HAVE internet access") || strings.Contains(p, "entirely offline") {
+		t.Fatalf("prompt: %s", p)
+	}
+	tr = ts.chat(map[string]any{"agent_id": ag.ID, "message": "latest news"})
+	if len(tr.events["tool"]) != 1 {
+		t.Fatalf("tool events: %v", tr.events)
+	}
+	var step ToolStep
+	json.Unmarshal(tr.events["tool"][0], &step)
+	if step.Tool != "web_search" || !strings.Contains(step.Args, `"offered":"web_search"`) {
+		t.Fatalf("first step: %+v", step)
+	}
+	if !strings.Contains(tr.answer, "Tool said:") || !strings.Contains(tr.answer, "github.com/ggml-org/llama.cpp") {
+		t.Fatalf("answer: %q", tr.answer)
+	}
+
+	// Without the web_search tool the option is dropped on save.
+	ag.Tools = []string{"calculator"}
+	ts.call("POST", "/api/agents", ag, &ag)
+	if ag.SearchFirst || !strings.Contains(a.systemPrompt(&ag), "no internet access") {
+		t.Fatalf("search_first kept without web_search: %+v", ag)
+	}
+}
