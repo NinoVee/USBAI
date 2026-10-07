@@ -3,7 +3,9 @@ package app
 import (
 	"bufio"
 	"bytes"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"net"
@@ -12,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -399,5 +402,79 @@ func TestImageReader(t *testing.T) {
 	tr = ts.chat(map[string]any{"message": "and this?", "images": []string{"data:image/png;base64," + base64.StdEncoding.EncodeToString(png)}})
 	if len(tr.events["error"]) != 1 || !strings.Contains(string(tr.events["error"][0]), "turned off in Settings") {
 		t.Fatalf("expected a clear refusal, got %v", tr.events)
+	}
+}
+
+type syncBuf struct {
+	mu sync.Mutex
+	b  bytes.Buffer
+}
+
+func (s *syncBuf) Write(p []byte) (int, error) { s.mu.Lock(); defer s.mu.Unlock(); return s.b.Write(p) }
+func (s *syncBuf) String() string              { s.mu.Lock(); defer s.mu.Unlock(); return s.b.String() }
+
+// TestModelCache: with caching on, a model loads from the drive, is copied
+// (and verified) to the host cache, and the next start loads from the cache.
+func TestModelCache(t *testing.T) {
+	root := t.TempDir()
+	host := platform.Detect()
+	host.Accel = nil
+	rt := filepath.Join(root, "runtime", host.Slug()+"-cpu")
+	if out, err := exec.Command("go", "build", "-o", filepath.Join(rt, host.ServerBinary()), "./testdata/fakellama").CombinedOutput(); err != nil {
+		t.Fatalf("build fake server: %v\n%s", err, out)
+	}
+	data := []byte("GGUF model bytes")
+	os.MkdirAll(filepath.Join(root, "models/chat"), 0o755)
+	os.WriteFile(filepath.Join(root, "models/chat/m.gguf"), data, 0o644)
+	sum := sha256.Sum256(data)
+	cfg := config.Default()
+	cfg.Root = root
+	cfg.Models = []config.Model{{ID: "m", Name: "M", Role: "chat", File: "models/chat/m.gguf", Size: int64(len(data)), SHA256: hex.EncodeToString(sum[:])}}
+
+	log := &syncBuf{}
+	a := New(cfg, host, log)
+	defer a.Stop()
+	a.cacheRoot = filepath.Join(t.TempDir(), "cache")
+	defer func(h int64) { cacheHeadroom = h }(cacheHeadroom)
+	cacheHeadroom = 0 // the test disk may be small
+	if err := a.saveSettings(settings{CacheModels: true}); err != nil {
+		t.Fatal(err)
+	}
+
+	a.startChat()
+	if _, _, ok := a.chatEngine(); !ok {
+		t.Fatalf("not ready: %s", a.chatErr)
+	}
+	cached := filepath.Join(a.cacheRoot, cacheKey("models/chat/m.gguf", int64(len(data)), hex.EncodeToString(sum[:])))
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		if b, err := os.ReadFile(cached); err == nil && bytes.Equal(b, data) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("model not cached; log:\n%s", log)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if strings.Contains(log.String(), "from this computer's cache") {
+		t.Fatal("first load should come from the drive")
+	}
+
+	a.startChat() // e.g. next launch
+	if !strings.Contains(log.String(), "Loading M from this computer's cache") {
+		t.Fatalf("second load did not use the cache; log:\n%s", log)
+	}
+	if names, n := a.CacheStatus(); len(names) != 1 || n != int64(len(data)) {
+		t.Fatalf("CacheStatus = %v, %d", names, n)
+	}
+
+	// A corrupted source is never cached.
+	os.Remove(cached)
+	os.WriteFile(filepath.Join(root, "models/chat/m.gguf"), []byte("GGUF model bytez"), 0o644)
+	if err := a.cacheOne(cachedFile{rel: "models/chat/m.gguf", size: int64(len(data)), sum: hex.EncodeToString(sum[:])}); err == nil {
+		t.Fatal("cached a file whose checksum does not match")
+	}
+	if a.ClearCache() != nil || len(a.cacheEntries()) != 0 {
+		t.Fatal("ClearCache left files")
 	}
 }

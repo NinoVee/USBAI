@@ -59,7 +59,7 @@ app under 50 MB, and the rest for your documents, index and free space.
 | Other websites | Host-header check (blocks DNS rebinding), and every write request needs a custom header (blocks CSRF). Strict CSP. |
 | Data at rest | `data/vault`: AES-256-GCM. The key comes from your passphrase (PBKDF2-SHA256, 600k iterations, random salt). Object names are HMAC'd, so file names reveal nothing. Each object is bound to its name, so swapping files is detected. |
 | Locking | The key lives only in RAM. **Lock** or **Shut down** discards it. |
-| Host computer | Nothing is written outside the drive. Logs go only to the console window. |
+| Host computer | Nothing is written outside the drive and logs go only to the console window, unless you turn on **Faster loading** (off by default). That copies only public model files, named by checksum, to the computer's cache folder (`~/Library/Caches/PrivateAI` on macOS, at most 40 GB). It never copies chats, documents or memory, and **Remove cached models** deletes them. |
 | Uploaded HTML/SVG | Served back as plain text, so it cannot run script in the app's origin. |
 
 Forgetting the passphrase makes the vault unrecoverable. That is deliberate.
@@ -100,6 +100,16 @@ image keep working.
 It turns on automatically on computers with 16 GB or more of memory, using the
 smallest vision model on the drive. Change or turn it off under **Settings →
 Image reader**.
+
+### Faster loading (model cache)
+
+Load time is mostly the drive reading the model file, which can be 7–9 GB.
+With **Settings → Faster loading** on, each model is copied to the computer's
+internal disk after its first load, with the copy verified against the model's
+SHA-256. Later loads read from that copy, which is typically several times
+faster than a USB stick. The copy only starts once the model is loaded and
+running, never while it is still loading. It keeps 10 GB of the computer's
+disk free and removes the least recently used models when it reaches 40 GB.
 
 ### Agents
 

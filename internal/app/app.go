@@ -68,6 +68,11 @@ type App struct {
 	index  *rag.Index
 	docs   map[string]DocMeta
 	memory []MemoryItem
+	// cacheRoot overrides the model cache location (tests); cacheMu
+	// serializes cache copies.
+	cacheRoot string
+	cacheMu   sync.Mutex
+
 	// agentsMu serializes read-modify-write of the agents list.
 	agentsMu sync.Mutex
 
@@ -102,6 +107,8 @@ type settings struct {
 	ChatModel string `json:"chat_model,omitempty"`
 	// VisionModel picks the image reader: "" automatic, "off", or a model id.
 	VisionModel string `json:"vision_model,omitempty"`
+	// CacheModels keeps copies of models on the host for faster loading.
+	CacheModels bool `json:"cache_models,omitempty"`
 }
 
 func (a *App) loadSettings() settings {
@@ -174,9 +181,23 @@ func (a *App) StartEngines() {
 // startServer tries each runtime candidate (GPU builds first, CPU last) and
 // returns the first that loads the model.
 func (a *App) startServer(m config.Model, embedding bool) (*llama.Server, string, error) {
+	// Load from the host's cache when possible; queue copies otherwise.
+	var toCache []cachedFile
+	mf := cachedFile{rel: m.File, size: m.Size, sum: m.SHA256}
+	modelPath, hit := a.loadPath(mf)
+	if !hit {
+		toCache = append(toCache, mf)
+	}
 	mmproj := ""
 	if !embedding && a.cfg.Vision(m) {
-		mmproj = a.cfg.Path(m.MMProj)
+		pf := cachedFile{rel: m.MMProj, size: m.MMProjSize, sum: m.MMProjSHA256}
+		var phit bool
+		if mmproj, phit = a.loadPath(pf); !phit {
+			toCache = append(toCache, pf)
+		}
+	}
+	if modelPath != a.cfg.Path(m.File) {
+		a.logf("Loading %s from this computer's cache: %s", m.Name, modelPath)
 	}
 	var errs []error
 	tried := false
@@ -198,7 +219,7 @@ func (a *App) startServer(m config.Model, embedding bool) (*llama.Server, string
 		srv, err := llama.Start(a.ctx, llama.Options{
 			RuntimeDir: dir,
 			Binary:     a.host.ServerBinary(),
-			Model:      a.cfg.Path(m.File),
+			Model:      modelPath,
 			Context:    m.Context,
 			GPULayers:  gpu,
 			Threads:    a.cfg.Threads,
@@ -209,6 +230,9 @@ func (a *App) startServer(m config.Model, embedding bool) (*llama.Server, string
 			Log:        a.log,
 		})
 		if err == nil {
+			if len(toCache) > 0 {
+				go a.cacheFiles(toCache)
+			}
 			return srv, name, nil
 		}
 		a.logf("Runtime %s failed: %v", name, err)

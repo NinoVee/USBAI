@@ -51,6 +51,28 @@ func (a *App) Handler(ui fs.FS, port int) http.Handler {
 		go a.startVision()
 		writeJSON(w, map[string]bool{"ok": true})
 	})
+	mux.HandleFunc("POST /api/cache", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Enabled bool `json:"enabled"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			httpError(w, err)
+			return
+		}
+		s := a.loadSettings()
+		s.CacheModels = body.Enabled
+		if err := a.saveSettings(s); err != nil {
+			httpError(w, err)
+			return
+		}
+		if body.Enabled {
+			go a.cacheRunning() // cache what's already loaded
+		}
+		writeJSON(w, map[string]bool{"ok": true})
+	})
+	mux.HandleFunc("DELETE /api/cache", func(w http.ResponseWriter, r *http.Request) {
+		respondErr(w, a.ClearCache())
+	})
 	mux.HandleFunc("POST /api/models/retry", func(w http.ResponseWriter, r *http.Request) {
 		go a.startChat()
 		writeJSON(w, map[string]bool{"ok": true})
@@ -210,6 +232,7 @@ func (a *App) handleStatus(w http.ResponseWriter, r *http.Request) {
 	st["images_ok"] = (a.chatState == StateReady && a.chatModel.ID != "" && a.cfg.Vision(a.chatModel)) ||
 		(a.visionState == StateReady && a.vision != nil && a.vision.Alive())
 	st["vision_choice"] = a.loadSettings().VisionModel
+	st["cache_on"] = a.loadSettings().CacheModels
 	a.engMu.Unlock()
 
 	var models []modelInfo
@@ -223,6 +246,8 @@ func (a *App) handleStatus(w http.ResponseWriter, r *http.Request) {
 		models = append(models, mi)
 	}
 	st["models"] = models
+	st["cache_names"], st["cache_bytes"] = a.CacheStatus()
+	st["cache_dir"] = a.cacheDir()
 	st["host"] = a.host
 	st["initialized"] = a.Initialized()
 	a.dataMu.RLock()

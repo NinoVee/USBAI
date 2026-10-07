@@ -30,7 +30,9 @@ PRIVACY
 
 The assistant only listens on 127.0.0.1 (this computer); it is not reachable
 from the network. Nothing is written to the computer's own disk, though your
-browser may remember that you visited 127.0.0.1:8740.
+browser may remember that you visited 127.0.0.1:8740. The exception is
+Settings -> Faster loading (off by default). It copies only the public AI model
+files to this computer to make loading faster, never your chats or files.
 
 REQUIREMENTS
 ------------

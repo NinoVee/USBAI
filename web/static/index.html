@@ -158,6 +158,13 @@
         <select id="vision-select" aria-label="Image reader"></select>
         <span id="vision-status" class="muted"></span>
       </div>
+      <h3>Faster loading</h3>
+      <label class="toggle"><input type="checkbox" id="cache-on"> Keep a copy of models on this computer</label>
+      <p class="muted">USB drives are slow to read, so big models can take a minute or more to load. With this on, each model is copied to this computer's internal disk after it first loads, and later loads read from there, typically several times faster. Only the public AI model files are copied — never your chats, documents or memory. Uses up to 40 GB of this computer's disk.</p>
+      <div class="vision-row">
+        <span id="cache-status" class="muted"></span>
+        <button id="cache-clear" class="danger">Remove cached models</button>
+      </div>
       <h3>This computer</h3>
       <dl id="host-info" class="facts"></dl>
       <h3>Privacy</h3>

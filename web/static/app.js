@@ -750,6 +750,14 @@ function renderSettings() {
     error: `Failed: ${st.vision_error}`, off: `Not running — ${st.vision_error || "off"}` }[st.vision_state] || "";
   $("vision-status").textContent = vs;
 
+  // Model cache.
+  $("cache-on").checked = !!st.cache_on;
+  const gb = (st.cache_bytes || 0) / 2 ** 30;
+  $("cache-status").textContent = st.cache_bytes
+    ? `Cached on this computer (${gb.toFixed(1)} GB): ${(st.cache_names || []).join(", ") || "copying…"}`
+    : st.cache_on ? "Nothing cached yet — models are copied after they load." : "Nothing cached on this computer.";
+  $("cache-clear").classList.toggle("hidden", !st.cache_bytes);
+
   const facts = [
     ["System", `${st.host.os} ${st.host.arch}`],
     ["CPU threads", st.host.cpus],
@@ -778,6 +786,15 @@ $("shutdown").addEventListener("click", async () => {
   clearInterval(poll);
 });
 
+$("cache-on").addEventListener("change", async (e) => {
+  await api("POST", "/api/cache", { enabled: e.target.checked });
+  refreshStatus();
+});
+$("cache-clear").addEventListener("click", async () => {
+  if (!confirm("Remove the cached models from this computer? They stay on the drive.")) return;
+  await api("DELETE", "/api/cache");
+  refreshStatus();
+});
 $("vision-select").addEventListener("change", async (e) => {
   await api("POST", "/api/vision/select", { id: e.target.value });
   e.target.blur();
