@@ -103,11 +103,8 @@ Image reader**.
 
 ### Appearance
 
-The default theme is **Matrix**: green on black, terminal type, and the
-falling "digital rain" behind the interface. The rain is drawn at about 18
-frames per second, pauses when the tab is hidden, and stays off if the
-computer's *Reduce motion* setting is on. Switch to **Classic** or turn the
-rain off under **Settings → Appearance**. The choice is remembered in this
+The default theme is **Matrix**: green on black with terminal type. Switch to
+**Classic** under **Settings → Appearance**. The choice is remembered in this
 browser.
 
 ### Faster loading (model cache)

@@ -168,7 +168,7 @@ input[type=range] { padding: 0; }
 }
 
 /* ---- Matrix theme (default) ----------------------------------------- */
-/* Phosphor green on black, terminal type, and "digital rain" behind the UI. */
+/* Phosphor green on black with terminal type. */
 :root[data-theme="matrix"] {
   --bg: #000;
   --surface: rgba(0, 12, 3, 0.88);
@@ -188,7 +188,6 @@ input[type=range] { padding: 0; }
   color-scheme: dark;
 }
 :root[data-theme="matrix"] body { background: #000; font-size: 14px; }
-#rain { position: fixed; inset: 0; z-index: -1; pointer-events: none; opacity: 0.22; }
 :root[data-theme="matrix"] #app { position: relative; }
 
 :root[data-theme="matrix"] .title { color: var(--accent); text-shadow: var(--glow); letter-spacing: .3em; }

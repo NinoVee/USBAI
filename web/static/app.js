@@ -828,7 +828,7 @@ $("engine-retry").addEventListener("click", async () => {
   refreshStatus();
 });
 
-// ---- Theme: Matrix (default) or Classic, plus the digital rain ----
+// ---- Theme: Matrix (default) or Classic ----
 
 const prefs = (() => {
   const get = (k, d) => { try { return localStorage.getItem(k) ?? d; } catch { return d; } };
@@ -836,72 +836,13 @@ const prefs = (() => {
   return { get, set };
 })();
 
-const rain = (() => {
-  const canvas = $("rain");
-  const ctx = canvas.getContext("2d");
-  const glyphs = "ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜﾝ0123456789Z:.=*+-<>|";
-  const size = 16;
-  let drops = [], timer = null, last = 0;
-  const reduced = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-  function resize() {
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    canvas.width = innerWidth * dpr;
-    canvas.height = innerHeight * dpr;
-    canvas.style.width = innerWidth + "px";
-    canvas.style.height = innerHeight + "px";
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const cols = Math.ceil(innerWidth / size);
-    drops = Array.from({ length: cols }, (_, i) => drops[i] ?? Math.random() * -innerHeight / size);
-    ctx.fillStyle = "#000";
-    ctx.fillRect(0, 0, innerWidth, innerHeight);
-  }
-  function frame(t) {
-    timer = requestAnimationFrame(frame);
-    if (t - last < 55) return; // ~18 fps keeps CPU use tiny
-    last = t;
-    ctx.fillStyle = "rgba(0, 0, 0, 0.08)"; // fade old glyphs into trails
-    ctx.fillRect(0, 0, innerWidth, innerHeight);
-    ctx.font = `${size}px monospace`;
-    for (let i = 0; i < drops.length; i++) {
-      const y = drops[i] * size;
-      const ch = glyphs[(Math.random() * glyphs.length) | 0];
-      ctx.fillStyle = Math.random() < 0.04 ? "#d8ffe0" : "#00ff41"; // occasional bright head
-      ctx.fillText(ch, i * size, y);
-      if (y > innerHeight && Math.random() > 0.975) drops[i] = 0;
-      drops[i] += 1;
-    }
-  }
-  function start() {
-    if (timer || reduced || document.hidden) return;
-    canvas.classList.remove("hidden");
-    resize();
-    timer = requestAnimationFrame(frame);
-  }
-  function stop() {
-    if (timer) cancelAnimationFrame(timer);
-    timer = null;
-  }
-  function off() { stop(); canvas.classList.add("hidden"); }
-  addEventListener("resize", () => { if (timer) resize(); });
-  document.addEventListener("visibilitychange", () => {
-    if (document.hidden) stop(); else if (wantRain()) start();
-  });
-  return { start, off };
-})();
-
 const theme = () => prefs.get("theme", "matrix");
-const wantRain = () => theme() === "matrix" && prefs.get("rain", "on") === "on";
 
 function applyTheme() {
   document.documentElement.dataset.theme = theme();
   $("theme-select").value = theme();
-  $("rain-on").checked = prefs.get("rain", "on") === "on";
-  $("rain-on").disabled = theme() !== "matrix";
-  if (wantRain()) rain.start(); else rain.off();
 }
 $("theme-select").addEventListener("change", (e) => { prefs.set("theme", e.target.value); applyTheme(); });
-$("rain-on").addEventListener("change", (e) => { prefs.set("rain", e.target.checked ? "on" : "off"); applyTheme(); });
 applyTheme();
 
 // "Wake up…" typed on the lock screen in the Matrix theme.
