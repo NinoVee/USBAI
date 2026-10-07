@@ -230,3 +230,10 @@ func TestSearchFirstAgent(t *testing.T) {
 		t.Fatalf("search_first kept without web_search: %+v", ag)
 	}
 }
+
+func TestStripToolCalls(t *testing.T) {
+	in := "Here.\n<tool_call>\n{\"name\": \"web_search\"}\n</tool_call>\nDone.<tool_call>{\"name\""
+	if got := stripToolCalls(in); got != "Here.\n\nDone." {
+		t.Fatalf("got %q", got)
+	}
+}

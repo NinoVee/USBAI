@@ -3,6 +3,7 @@ package app
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -282,13 +283,20 @@ func (a *App) Chat(req ChatRequest, ev ChatEvents) error {
 		if err != nil {
 			break
 		}
+		if step+1 >= maxAgentSteps {
+			last := &msgs[len(msgs)-1]
+			last.Content = fmt.Sprint(last.Content) + "\n(That was your last tool call. Answer the user now with what you found.)"
+		}
 		// Separate any text written before the tool call from the answer.
 		if answer.Len() > before {
 			answer.WriteString("\n\n")
 			ev.Token("\n\n")
 		}
 	}
-	reply := strings.TrimSpace(stripThink(answer.String()))
+	reply := strings.TrimSpace(stripToolCalls(stripThink(answer.String())))
+	if reply == "" && len(steps) > 0 && err == nil {
+		reply = "I couldn't finish an answer with my tools. Please try again or rephrase the question."
+	}
 	if reply == "" && err != nil {
 		return err
 	}
@@ -370,6 +378,12 @@ func (a *App) agentTools(ag *Agent) []string {
 	}
 	return out
 }
+
+var reToolCallText = regexp.MustCompile(`(?s)<tool_call>.*?(</tool_call>|$)`)
+
+// stripToolCalls removes tool calls a model wrote as text when it was no
+// longer offered tools.
+func stripToolCalls(s string) string { return reToolCallText.ReplaceAllString(s, "") }
 
 // stripThink removes <think>…</think> blocks from models that emit them inline.
 func stripThink(s string) string {

@@ -169,6 +169,10 @@ func (a *App) runTool(ag *Agent, call llama.ToolCall) string {
 		var provider string
 		if results, provider, err = a.WebSearch(a.ctx, arg("query")); err == nil {
 			out = formatSearch(results, provider)
+		} else {
+			// Small models otherwise retry the same failing search.
+			return "Error: " + err.Error() + "\nThe web search is not working right now, so searching again will fail too." +
+				" Tell the user the search failed and why, then answer from what you know, saying it may be out of date."
 		}
 	case "read_webpage":
 		var page string

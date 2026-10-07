@@ -363,7 +363,7 @@ async function send(text) {
           if (!raw) body.textContent = "Thinking…";
         } else if (ev === "token") {
           raw += data.text;
-          body.innerHTML = markdown(raw.replace(/<think>[\s\S]*?(<\/think>|$)/g, ""));
+          body.innerHTML = markdown(raw.replace(/<think>[\s\S]*?(<\/think>|$)/g, "").replace(/<tool_call>[\s\S]*?(<\/tool_call>|$)/g, ""));
           msg._raw = raw;
           const m = $("messages");
           if (m.scrollHeight - m.scrollTop - m.clientHeight < 120) m.scrollTop = m.scrollHeight;
