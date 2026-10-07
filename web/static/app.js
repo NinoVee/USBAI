@@ -606,7 +606,50 @@ function chatWith(id) {
   show("chat");
 }
 
+async function renderWeb() {
+  let ws;
+  try { ws = await api("GET", "/api/web"); } catch { return; }
+  $("web-ddg").checked = ws.duckduckgo;
+  $("web-brave").checked = ws.brave;
+  $("brave-key").value = "";
+  $("brave-key").placeholder = ws.brave_key_saved ? "•••••••• key saved (type to replace)" : "Brave API key";
+  $("brave-remove").classList.toggle("hidden", !ws.brave_key_saved);
+  state.web = ws;
+  const on = ws.duckduckgo || (ws.brave && ws.brave_key_saved);
+  $("web-status").textContent = on ? "Internet access is on for agents with 🌐 tools." : "Internet access is off.";
+  if (ws.brave && !ws.brave_key_saved) $("web-status").textContent = "Add your Brave API key to use Brave Search.";
+}
+async function saveWeb(extra) {
+  await api("POST", "/api/web", { duckduckgo: $("web-ddg").checked, brave: $("web-brave").checked, ...extra });
+  renderWeb();
+}
+$("web-ddg").addEventListener("change", () => saveWeb());
+$("web-brave").addEventListener("change", () => saveWeb());
+$("brave-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const key = $("brave-key").value.trim();
+  if (!key) return;
+  await saveWeb({ brave_key: key, brave: true });
+});
+$("brave-remove").addEventListener("click", async () => {
+  if (!confirm("Remove the saved Brave API key?")) return;
+  $("web-brave").checked = false;
+  await saveWeb({ brave_key: "-" });
+});
+$("web-test").addEventListener("click", async () => {
+  $("web-status").textContent = "Testing…";
+  try {
+    const r = await api("POST", "/api/web/test");
+    $("web-status").textContent = `✓ Working — ${r.results} results via ${r.provider}.`;
+  } catch (err) {
+    $("web-status").textContent = "✗ " + err.message;
+  }
+});
+
+const usesWeb = (a) => (a.tools || []).some((t) => t === "web_search" || t === "read_webpage");
+
 async function renderAgents() {
+  renderWeb();
   await loadAgents();
   const list = $("agent-list");
   list.replaceChildren();
@@ -614,7 +657,7 @@ async function renderAgents() {
   for (const a of state.agents) {
     list.append(el("li", {},
       el("div", { class: "agent-emoji" }, a.emoji),
-      el("div", { class: "grow" }, a.name,
+      el("div", { class: "grow" }, a.name, usesWeb(a) ? el("span", { class: "web-badge", title: "This agent can use the internet when it's switched on" }, "🌐 internet") : null,
         el("div", { class: "sub" }, [a.description, (a.tools || []).length ? "Tools: " + a.tools.map(toolLabel).join(", ") : "No tools",
           { all: "All files", selected: `${(a.doc_ids || []).length} selected file(s)`, none: "No files" }[a.knowledge] || ""].filter(Boolean).join(" · "))),
       el("button", { class: "primary", onclick: () => chatWith(a.id) }, "Chat"),

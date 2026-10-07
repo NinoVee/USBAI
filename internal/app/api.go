@@ -147,6 +147,32 @@ func (a *App) Handler(ui fs.FS, port int) http.Handler {
 		respondErr(w, a.DeleteAgent(r.PathValue("id")))
 	})
 
+	mux.HandleFunc("GET /api/web", func(w http.ResponseWriter, r *http.Request) {
+		ws, err := a.WebSettings()
+		if err != nil {
+			httpError(w, err)
+			return
+		}
+		// Never send the key back; just whether one is saved.
+		writeJSON(w, map[string]any{"duckduckgo": ws.DuckDuckGo, "brave": ws.Brave, "brave_key_saved": ws.BraveKey != ""})
+	})
+	mux.HandleFunc("POST /api/web", func(w http.ResponseWriter, r *http.Request) {
+		var ws WebSettings
+		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&ws); err != nil {
+			httpError(w, err)
+			return
+		}
+		respondErr(w, a.SaveWebSettings(ws))
+	})
+	mux.HandleFunc("POST /api/web/test", func(w http.ResponseWriter, r *http.Request) {
+		res, provider, err := a.WebSearch(r.Context(), "weather today")
+		if err != nil {
+			httpError(w, err)
+			return
+		}
+		writeJSON(w, map[string]any{"provider": provider, "results": len(res)})
+	})
+
 	mux.HandleFunc("GET /api/memory", func(w http.ResponseWriter, r *http.Request) {
 		respond(w)(a.Memory())
 	})

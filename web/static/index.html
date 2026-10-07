@@ -80,7 +80,28 @@
         <h2>Agents</h2>
         <button class="primary" id="agent-new">New agent</button>
       </div>
-      <p class="muted">Agents are assistants with their own instructions, tools and documents. They run entirely on this drive and can't reach the internet.</p>
+      <p class="muted">Agents are assistants with their own instructions, tools and documents. They run entirely on this drive; they only reach the internet if you switch it on below <em>and</em> give an agent the 🌐 web tools.</p>
+      <div class="card web-card">
+        <h3>🌐 Internet access</h3>
+        <div class="web-row">
+          <label class="switch"><input type="checkbox" id="web-ddg"><span class="slider"></span></label>
+          <div class="grow"><strong>DuckDuckGo</strong><div class="sub muted">Free, no account or key needed.</div></div>
+        </div>
+        <div class="web-row">
+          <label class="switch"><input type="checkbox" id="web-brave"><span class="slider"></span></label>
+          <div class="grow"><strong>Brave Search</strong><div class="sub muted">Official API — used automatically if DuckDuckGo fails. <a href="https://brave.com/search/api/" target="_blank" rel="noopener noreferrer">Get a free API key</a></div></div>
+        </div>
+        <form id="brave-form" class="inline-form">
+          <input id="brave-key" type="password" autocomplete="off" placeholder="Brave API key">
+          <button class="primary">Save key</button>
+          <button type="button" id="brave-remove" class="danger hidden">Remove key</button>
+        </form>
+        <div class="web-row">
+          <button type="button" id="web-test">Test connection</button>
+          <span id="web-status" class="muted"></span>
+        </div>
+        <p class="muted small">Only search words and page addresses are sent — never your chats, files or memory. Pages are read without cookies or logins, and addresses on this computer or your home network are blocked. Your Brave key is stored encrypted in your vault.</p>
+      </div>
       <div id="agent-form-wrap" class="hidden">
         <form id="agent-form" class="card agent-form">
           <h3 id="agent-form-title">New agent</h3>

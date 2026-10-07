@@ -164,12 +164,14 @@ var (
 	reScript = regexp.MustCompile(`(?is)<(script|style|noscript)[^>]*>.*?</(script|style|noscript)>`)
 	reBlock  = regexp.MustCompile(`(?i)</?(p|div|br|li|tr|h[1-6]|section|article|table|ul|ol)[^>]*>`)
 	reTag    = regexp.MustCompile(`<[^>]+>`)
+	reInline = regexp.MustCompile(`(?i)</?(b|i|em|strong|span|a|code|small|sup|sub|u|mark|abbr)\b[^>]*>`)
 	reRTF    = regexp.MustCompile(`\\[a-z]+-?\d* ?|[{}]`)
 )
 
 func stripHTML(s string) string {
 	s = reScript.ReplaceAllString(s, " ")
 	s = reBlock.ReplaceAllString(s, "\n")
+	s = reInline.ReplaceAllString(s, "") // keep "to<b>day</b>" as one word
 	s = reTag.ReplaceAllString(s, " ")
 	return html.UnescapeString(s)
 }

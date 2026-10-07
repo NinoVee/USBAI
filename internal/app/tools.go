@@ -59,6 +59,18 @@ var toolCatalog = map[string]toolSpec{
 		Params:      map[string]string{"fact": "the fact to remember, in one sentence"},
 		Required:    []string{"fact"},
 	},
+	"web_search": {
+		Label:       "🌐 Search the web",
+		Description: "Search the internet. Returns titles, addresses and snippets of the top results. Uses the internet: only the query is sent.",
+		Params:      map[string]string{"query": "what to search for"},
+		Required:    []string{"query"},
+	},
+	"read_webpage": {
+		Label:       "🌐 Read web pages",
+		Description: "Read the text of a web page by its address (from search results or the user). Uses the internet.",
+		Params:      map[string]string{"url": "the page address, e.g. https://example.com/article"},
+		Required:    []string{"url"},
+	},
 	"create_note": {
 		Label:       "Create notes",
 		Description: "Save a note as a new document in the user's Files (Markdown). Use for summaries, plans or anything the user wants to keep.",
@@ -151,6 +163,17 @@ func (a *App) runTool(ag *Agent, call llama.ToolCall) string {
 	case "remember":
 		if _, err = a.Remember(arg("fact")); err == nil {
 			out = "Saved to memory."
+		}
+	case "web_search":
+		var results []SearchResult
+		var provider string
+		if results, provider, err = a.WebSearch(a.ctx, arg("query")); err == nil {
+			out = formatSearch(results, provider)
+		}
+	case "read_webpage":
+		var page string
+		if page, err = a.ReadWebpage(a.ctx, arg("url")); err == nil {
+			out = untrustedLabel + page
 		}
 	case "create_note":
 		title := arg("title")

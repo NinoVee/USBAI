@@ -55,7 +55,7 @@ app under 50 MB, and the rest for your documents, index and free space.
 
 | | |
 |---|---|
-| Network | Every server binds to `127.0.0.1` only, and API requests from non-loopback addresses are refused. Nothing calls out. |
+| Network | Every server binds to `127.0.0.1` only, and API requests from non-loopback addresses are refused. Nothing calls out unless you switch on agent internet access, which is off by default and sends only search words and page addresses. |
 | Other websites | Host-header check (blocks DNS rebinding), and every write request needs a custom header (blocks CSRF). Strict CSP. |
 | Data at rest | `data/vault`: AES-256-GCM. The key comes from your passphrase (PBKDF2-SHA256, 600k iterations, random salt). Object names are HMAC'd, so file names reveal nothing. Each object is bound to its name, so swapping files is detected. |
 | Locking | The key lives only in RAM. **Lock** or **Shut down** discards it. |
@@ -132,10 +132,42 @@ Research Assistant, Contract Reviewer, Note Taker, Math Tutor, Writing Coach.
 Agents use llama.cpp's tool calling. The model may call tools for up to 6
 rounds before it must answer, and each answer shows the tools it used.
 
-Tools run in-process. They can't reach the internet, run programs, or touch
-the host computer's files. The most an agent can change is adding a note or a
-memory to your own vault. Agents and their chats are encrypted like
-everything else.
+Tools run in-process. Apart from the optional web tools below, they can't
+reach the internet. None of them can run programs or touch the host
+computer's files. The most an agent can change is adding a note or a memory to
+your own vault. Agents and their chats are encrypted like everything else.
+
+### Internet access for agents (optional)
+
+**Agents → Internet access** has two switches, both off by default:
+
+- **DuckDuckGo:** free and needs no key. It reads DuckDuckGo's HTML results
+  page, so it can break if their page changes, and it may ask for a human
+  check after many searches.
+- **Brave Search:** the official [Brave Search API](https://brave.com/search/api/),
+  which needs a free API key. The key is stored encrypted in the vault and is
+  never sent back to the browser.
+
+Searches try DuckDuckGo first, then Brave **automatically** if DuckDuckGo fails.
+**Test connection** shows which one answered. An agent only goes online if
+internet access is on *and* the agent has the 🌐 *Search the web* or *Read web
+pages* tools. Those agents show a 🌐 badge, and the **Web Researcher** template
+sets one up.
+
+Safety:
+- **What is sent:** only the search words or page address. Chats, files and
+  memory are never sent.
+- **How pages are fetched:** read-only, with no cookies, logins, forms or
+  downloads, at most 3 MB per page.
+- **Blocked addresses:** this computer, the local network, cloud metadata
+  addresses and `.local` names are refused on every connection, including
+  redirects.
+- **No proxy:** system proxy settings are ignored, so that address check always
+  sees the real site.
+- **Untrusted content:** web text is labelled as untrusted, and agents are told
+  never to follow instructions found in it. A small local model can still be
+  misled by a hostile page, so keep internet access off when you don't need
+  it.
 
 ## Building a drive
 
