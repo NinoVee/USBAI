@@ -67,6 +67,16 @@ Forgetting the passphrase makes the vault unrecoverable. That is deliberate.
 ### Documents (local RAG)
 
 - Text is extracted in-process from PDF, DOCX, TXT/MD, CSV/TSV, JSON, HTML, XML and RTF.
+- **Scanned PDFs** (page pictures with no text layer, like archive or FOIA
+  documents) are read with OCR by your vision model. The browser draws each
+  page with the bundled [pdf.js](https://mozilla.github.io/pdf.js/) and the
+  vision model (the chat model if it can see, otherwise the image reader)
+  transcribes it. A progress bar shows the page and time left, and *Stop*
+  cancels. The original PDF is kept and the text is indexed like any other
+  document. Everything stays on the computer. Up to 300 pages per file.
+  Speed depends on the model and computer: on a 4-core test machine with no
+  GPU, Gemma 3 12B took about 1.5–2 minutes per page; a Mac with Apple
+  silicon is several times faster.
 - Text is split into chunks of about 1200 characters with overlap, then embedded locally.
 - Search is hybrid: BM25 keyword ranking fused with embedding cosine
   similarity (reciprocal rank fusion). Without an embedding model it falls
@@ -265,7 +275,10 @@ take a few minutes over USB.
   Signing and notarizing is a to-do for a product release.
 - **Linux `noexec` mounts**: some desktops mount USB drives without exec
   permission. The launcher detects this and tells you how to remount.
-- Scanned PDFs need OCR, which is not included yet.
+- **OCR is done by a language model**, not a classic OCR engine. It reads
+  clean typed pages very well, but it can misread poor scans or handwriting,
+  and occasionally add or drop a line. Check important facts against the
+  original (*Open* in Files).
 - USB 2.0 drives make model loading slow. USB 3 is strongly recommended.
 - If the console window is closed instead of using *Shut down*, the
   `llama-server` child processes may keep running on Windows until logout.

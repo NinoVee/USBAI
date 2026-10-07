@@ -576,6 +576,9 @@ function ocrProgress(text, value, max) {
 }
 $("ocr-stop").addEventListener("click", () => { if (ocrStop) ocrStop(); });
 
+// "Gemma 3 12B (sharp image reading, …)" -> "Gemma 3 12B"
+const shortModel = (name) => (name || "").replace(/\s*\(.*\)\s*$/, "");
+
 function fmtDuration(ms) {
   const m = Math.round(ms / 60000);
   return m < 1 ? "under a minute" : m === 1 ? "about 1 minute" : `about ${m} minutes`;
@@ -601,7 +604,7 @@ async function readScanned(file, focusAfter) {
   try {
     for (let n = 1; n <= pages && !stopped; n++) {
       const eta = n > 1 ? ` — ${fmtDuration(((Date.now() - started) / (n - 1)) * (pages - n + 1))} left` : "";
-      ocrProgress(`📄 Reading ${file.name} from its page images: page ${n} of ${pages}${model ? " with " + model : ""}${eta}`, n - 1, pages);
+      ocrProgress(`📄 Reading ${file.name} from its page images: page ${n} of ${pages}${model ? " with " + shortModel(model) : ""}${eta}`, n - 1, pages);
       const r = await api("POST", "/api/ocr", { image: await pageImage(pdf, n) });
       model = r.model;
       parts.push(`--- Page ${n} ---\n${r.text}`);
@@ -624,11 +627,11 @@ async function readScanned(file, focusAfter) {
     const [r] = await api("POST", "/api/docs", fd);
     if (r.error) throw new Error(r.error);
     const more = pdf.numPages > pages ? ` (only the first ${pages} of ${pdf.numPages} pages)` : "";
-    status.textContent = `Read ${pages} scanned page(s) of ${file.name} with ${model}${more}.`;
+    status.textContent = `Read ${pages} scanned page(s) of ${file.name} with ${shortModel(model)}${more}.`;
     if (focusAfter) {
       state.focus.set(r.doc.id, r.doc.name);
       renderFocus();
-      addMessage("assistant", `✓ Read ${pages} scanned page(s) of **${file.name}** with ${model}${more}. Ask your question.`);
+      addMessage("assistant", `✓ Read ${pages} scanned page(s) of **${file.name}** with ${shortModel(model)}${more}. Ask your question.`);
     }
   } catch (err) {
     say(`⚠ ${file.name}: ${err.message}`);
@@ -650,7 +653,7 @@ async function renderDocs() {
   for (const d of docs) {
     list.append(el("li", {},
       el("div", { class: "grow" }, d.name,
-        el("div", { class: "sub" }, `${fmtSize(d.size)} · ${d.ocr ? "scan read by " + d.ocr + " · " : ""}${d.pieces} sections · ${d.embedded ? "semantic + keyword search" : "keyword search"} · ${fmtDate(d.added)}`)),
+        el("div", { class: "sub" }, `${fmtSize(d.size)} · ${d.ocr ? "scan read by " + shortModel(d.ocr) + " · " : ""}${d.pieces} sections · ${d.embedded ? "semantic + keyword search" : "keyword search"} · ${fmtDate(d.added)}`)),
       el("button", { onclick: () => { state.focus.set(d.id, d.name); renderFocus(); show("chat"); } }, "Ask"),
       el("button", { onclick: () => window.open("/api/docs/" + d.id + "/file", "_blank", "noopener") }, "Open"),
       el("button", { class: "danger", onclick: async () => {
