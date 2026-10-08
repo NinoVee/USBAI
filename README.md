@@ -177,7 +177,9 @@ colour-coded: AI models, files, chats (with their pictures), memory, agents,
 the app and its engines, other files, and free space. Your data's split is
 measured from the encrypted vault and is only known while it is unlocked.
 The model cache (Settings → Faster loading) is on this computer, not the
-drive, so it is listed separately below the bar. It refreshes every 30
+drive, so it is listed separately below the bar; **🧹 Clear cache from this
+computer** in Settings → Faster loading removes it, and offers to turn off
+Faster loading so it isn't copied again (useful on a shared computer). It refreshes every 30
 seconds and whenever you switch sections.
 
 The live call shows a **particle cloud**: a swirling sphere of glowing dots

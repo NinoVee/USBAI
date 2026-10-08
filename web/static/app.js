@@ -978,7 +978,9 @@ function renderSettings() {
   $("cache-status").textContent = st.cache_bytes
     ? `Cached on this computer (${gb.toFixed(1)} GB): ${(st.cache_names || []).join(", ") || "copying…"}`
     : st.cache_on ? "Nothing cached yet — models are copied after they load." : "Nothing cached on this computer.";
-  $("cache-clear").classList.toggle("hidden", !st.cache_bytes);
+  // Always shown; usable only when there is something to clear.
+  $("cache-clear").disabled = !st.cache_bytes;
+  $("cache-clear").textContent = st.cache_bytes ? `🧹 Clear cache from this computer (${gb.toFixed(1)} GB)` : "🧹 Cache is empty";
 
   const facts = [
     ["Private AI version", st.version || "dev"],
@@ -1022,7 +1024,7 @@ async function clearCache() {
     const st = await refreshStatus();
     if (st && st.cache_on && confirm("Also turn off Faster loading, so the models aren't copied to this computer again?\n\nChoose OK on a shared or borrowed computer.")) {
       await api("POST", "/api/cache", { enabled: false });
-      refreshStatus();
+      await refreshStatus();
     }
   } catch (err) {
     alert("Could not remove the cache: " + err.message);
@@ -1936,8 +1938,6 @@ async function refreshStorage() {
   legend.append(el("li", {}, el("i", { style: "background:var(--surface-2);border:1px solid var(--border)" }), "Free", el("b", {}, fmtBytes(r.free))));
   legend.append(el("li", { class: "sep", title: "Copies of AI models on this computer's disk (Settings → Faster loading)" },
     el("i", { style: `background:${CACHE_COLOR}` }), "Cache (this computer)", el("b", {}, fmtBytes(r.cache))));
-  if (r.cache) legend.append(el("li", { class: "storage-action" },
-    el("button", { type: "button", class: "storage-clear", onclick: clearCache }, "Clear cache from this computer")));
   bar.setAttribute("aria-label", `${fmtBytes(used)} of ${fmtBytes(r.total)} used`);
 }
 setInterval(refreshStorage, 30000);

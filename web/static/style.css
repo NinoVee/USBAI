@@ -187,7 +187,6 @@ input[type=range] { padding: 0; }
 .menu-list button:hover { color: var(--text); background: var(--surface-2); }
 .menu-list button.active { color: var(--accent); border-left-color: var(--accent); background: var(--surface-2); }
 .menu-list .ico { width: 1.4em; text-align: center; }
-
 /* Drive storage bar (in the menu, under Settings) */
 .storage { margin: 14px 4px 4px; padding-top: 12px; border-top: 1px solid var(--border); font-size: 12px; }
 .storage-head { display: flex; flex-direction: column; gap: 1px; color: var(--text); font-weight: 600; margin-bottom: 6px; }
@@ -198,9 +197,6 @@ input[type=range] { padding: 0; }
 .storage-legend li { display: flex; align-items: center; gap: 6px; color: var(--muted); }
 .storage-legend li b { font-weight: 400; color: var(--text); margin-left: auto; white-space: nowrap; }
 .storage-legend i { width: 9px; height: 9px; border-radius: 2px; flex: none; }
-.storage-legend li.storage-action { font-size: 11px; display: block; }
-#storage .storage-clear { all: unset; cursor: pointer; font-size: 11px; color: var(--danger); text-decoration: underline; text-transform: none; letter-spacing: normal; }
-#storage .storage-clear:hover, #storage .storage-clear:focus-visible { opacity: .8; outline: 1px dotted var(--danger); }
 .storage-legend li.sep { border-top: 1px dashed var(--border); margin-top: 4px; padding-top: 5px; }
 :root[data-family="term"] .storage-head { text-transform: uppercase; letter-spacing: .08em; font-size: 11px; }
 
@@ -492,3 +488,5 @@ input[type=range] { padding: 0; }
 .call-caption.you:not(:empty)::before { content: "You: "; font-style: normal; }
 .call-actions { display: flex; gap: 12px; }
 .call-actions button { min-width: 120px; padding: 12px 18px; }
+
+#cache-clear:disabled { opacity: .5; cursor: default; }
