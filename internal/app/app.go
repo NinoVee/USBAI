@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -197,6 +198,17 @@ func (a *App) StartEngines() {
 	}()
 }
 
+// threadsFor picks CPU threads for a model's engine. The speech model is
+// small and shares the computer with the chat model and the browser, so it
+// gets half the cores: llama.cpp threads spin while waiting, and engines
+// that each take every core slow each other down badly.
+func (a *App) threadsFor(m config.Model) int {
+	if a.cfg.Threads > 0 || m.Role != "speech" {
+		return a.cfg.Threads
+	}
+	return max(2, runtime.NumCPU()/2)
+}
+
 // startServer tries each runtime candidate (GPU builds first, CPU last) and
 // returns the first that loads the model.
 func (a *App) startServer(m config.Model, embedding bool) (*llama.Server, string, error) {
@@ -243,7 +255,7 @@ func (a *App) startServer(m config.Model, embedding bool) (*llama.Server, string
 			Model:      modelPath,
 			Context:    m.Context,
 			GPULayers:  gpu,
-			Threads:    a.cfg.Threads,
+			Threads:    a.threadsFor(m),
 			Embedding:  embedding,
 			MMProj:     mmproj,
 			ExtraArgs:  a.cfg.ExtraArgs,

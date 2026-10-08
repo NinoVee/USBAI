@@ -21,7 +21,8 @@ async function load(engine) {
       tts = null;
     }
   }
-  env.numThreads = Math.max(1, Math.min(8, (self.navigator.hardwareConcurrency || 4) - 1));
+  // Half the cores: the AI model may be working on the processor too.
+  env.numThreads = Math.max(1, Math.min(8, Math.floor((self.navigator.hardwareConcurrency || 4) / 2)));
   tts = await KokoroTTS.from_pretrained(MODEL, { dtype: "q8", device: "wasm" });
   device = "cpu";
 }
