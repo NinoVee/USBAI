@@ -172,12 +172,15 @@ func (a *App) runTool(ag *Agent, call llama.ToolCall) string {
 		} else {
 			// Small models otherwise retry the same failing search.
 			return "Error: " + err.Error() + "\nThe web search is not working right now, so searching again will fail too." +
-				" Tell the user the search failed and why, then answer from what you know, saying it may be out of date."
+				" If you have a web address (for example one the user gave), read it with read_webpage instead." +
+				" Otherwise tell the user the search failed and why, then answer from what you know, saying it may be out of date."
 		}
 	case "read_webpage":
 		var page string
 		if page, err = a.ReadWebpage(a.ctx, arg("url")); err == nil {
 			out = untrustedLabel + page
+		} else {
+			return "Error: " + err.Error() + "\nThis page could not be read. Do not describe or cite its contents; say it could not be opened."
 		}
 	case "create_note":
 		title := arg("title")

@@ -224,6 +224,16 @@ func TestSearchFirstAgent(t *testing.T) {
 		t.Fatalf("answer: %q", tr.answer)
 	}
 
+	// A web address in the message: the first step reads that page instead.
+	tr = ts.chat(map[string]any{"agent_id": ag.ID, "message": "Summarize https://example.org/news please"})
+	if len(tr.events["tool"]) == 0 {
+		t.Fatalf("no tool call: %v", tr.events)
+	}
+	json.Unmarshal(tr.events["tool"][0], &step)
+	if step.Tool != "read_webpage" || !strings.Contains(step.Args, `"offered":"read_webpage"`) {
+		t.Fatalf("first step with an address: %+v", step)
+	}
+
 	// Without the web_search tool the option is dropped on save.
 	ag.Tools = []string{"calculator"}
 	ts.call("POST", "/api/agents", ag, &ag)
