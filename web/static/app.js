@@ -1265,7 +1265,7 @@ async function listen(auto) {
   const proc = audioCtx.createScriptProcessor(4096, 1, 1);
   const chunks = [];
   const t0 = performance.now();
-  let floor = 0, heard = false, quietSince = 0, closed = false;
+  let floor = 1, heard = false, quietSince = 0, closed = false;
   const close = () => {
     if (closed) return false;
     closed = true;
@@ -1287,8 +1287,10 @@ async function listen(auto) {
     const rms = Math.sqrt(sum / d.length);
     const now = performance.now() - t0;
     $("mic").style.setProperty("--level", Math.min(1, rms * 12).toFixed(2));
-    if (now < 300) { floor = Math.max(floor, Math.min(rms, 0.05)); return; } // background noise
-    if (rms > Math.max(0.012, floor * 2.5)) { heard = true; quietSince = 0; }
+    // The quietest moment of the first 300 ms is the room's background
+    // noise (the minimum, so talking right away doesn't raise it).
+    if (now < 300) { floor = Math.min(floor, rms); return; }
+    if (rms > Math.max(0.012, Math.min(floor, 0.02) * 3)) { heard = true; quietSince = 0; }
     else if (heard) { quietSince = quietSince || now; if (now - quietSince > 1500) mic.finish(); }
     if (!heard && now > (auto ? 8000 : 12000)) mic.cancel(); // nobody spoke
     if (now > 120000) mic.finish();
