@@ -1566,7 +1566,7 @@ $("mic").addEventListener("click", () => { primeAudio(); listen(false); });
 
 let call = null;
 
-const CALL_PAUSE_MS = 1000; // silence that ends your turn
+const CALL_PAUSE_MS = 1200; // silence that ends your turn
 const CALL_BARGE_MS = 250; // speech that interrupts the agent
 
 function callSay(stateName, label) {
@@ -1629,8 +1629,11 @@ function onCallAudio(d, rms) {
   c.loud = rms > thr ? c.loud + ms : 0;
   const need = agentTalking ? CALL_BARGE_MS : 150;
   if ((c.state === "listening" || agentTalking) && c.loud >= need) {
+    // Talking on before the agent has said anything continues your turn
+    // (it was only a pause); once it speaks, talking interrupts it.
+    const resume = c.state === "thinking" && !c.replied ? c.said : [];
     if (agentTalking) interruptAgent();
-    c.chunks = c.preroll.slice();
+    c.chunks = resume.concat(c.preroll);
     c.preroll = [];
     c.quiet = 0;
     callSay("hearing", "Listening…");
@@ -1649,6 +1652,8 @@ async function endTurn() {
   const c = call;
   const chunks = c.chunks;
   c.chunks = [];
+  c.said = chunks;
+  c.replied = false;
   callSay("thinking", "Thinking…");
   const turn = ++c.turn;
   let text = "";
@@ -1673,7 +1678,7 @@ async function endTurn() {
   const speaker = c.speaker;
   await send(text, {
     speaker, signal: c.abort.signal,
-    onText: (raw) => { if (call === c && c.turn === turn) $("call-them").textContent = speechText(raw).slice(-280); },
+    onText: (raw) => { if (call === c && c.turn === turn) { c.replied = true; $("call-them").textContent = speechText(raw).slice(-280); } },
   });
   if (call !== c || c.turn !== turn) return;
   if (!speaker) { callSay("listening", "Listening…"); return; }
