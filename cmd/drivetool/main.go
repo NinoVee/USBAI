@@ -544,14 +544,20 @@ func fetchModels(drive string, only map[string]bool) error {
 				return fmt.Errorf("%s: %w", m.ID, err)
 			}
 		}
-		// Vision models also need their image projector.
+		// Vision and speech models also need their projector (image or
+		// audio encoder).
 		if m.MMProj != "" && m.MMProjURL != "" && !cfg.Vision(m) {
-			fmt.Printf("%s: downloading image projector\n", m.ID)
+			part := "image projector"
+			if m.Role == "speech" {
+				part = "audio encoder"
+			}
+			fmt.Printf("%s: downloading %s\n", m.ID, part)
 			if err := download(m.MMProjURL, cfg.Path(m.MMProj), m.MMProjSHA256); err != nil {
 				return fmt.Errorf("%s mmproj: %w", m.ID, err)
 			}
 		}
 	}
+	fmt.Println("All models are downloaded and verified.")
 	return nil
 }
 
