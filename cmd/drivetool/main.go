@@ -640,6 +640,7 @@ func downloadOnce(url, path, sha string) error {
 	pw := &progress{name: filepath.Base(path), done: offset, total: total}
 	_, err = io.Copy(io.MultiWriter(out, pw), resp.Body)
 	out.Close()
+	pw.print() // the final count, even for files that finish within a tick
 	fmt.Println()
 	if err != nil {
 		return fmt.Errorf("download interrupted (re-run to resume): %w", err)
@@ -725,13 +726,30 @@ func (p *progress) Write(b []byte) (int, error) {
 	p.done += int64(len(b))
 	if time.Since(p.last) > 500*time.Millisecond {
 		p.last = time.Now()
-		if p.total > 0 {
-			fmt.Printf("\r  %s: %d / %d MB (%.0f%%)   ", p.name, p.done>>20, p.total>>20, 100*float64(p.done)/float64(p.total))
-		} else {
-			fmt.Printf("\r  %s: %d MB   ", p.name, p.done>>20)
-		}
+		p.print()
 	}
 	return len(b), nil
+}
+
+func (p *progress) print() {
+	if p.total > 0 {
+		fmt.Printf("\r  %s: %s / %s (%.0f%%)   ", p.name, humanSize(p.done), humanSize(p.total), 100*float64(p.done)/float64(p.total))
+	} else {
+		fmt.Printf("\r  %s: %s   ", p.name, humanSize(p.done))
+	}
+}
+
+func humanSize(n int64) string {
+	switch {
+	case n >= 1<<30:
+		return fmt.Sprintf("%.1f GB", float64(n)/(1<<30))
+	case n >= 1<<20:
+		return fmt.Sprintf("%d MB", n>>20)
+	case n >= 1<<10:
+		return fmt.Sprintf("%d KB", n>>10)
+	default:
+		return fmt.Sprintf("%d bytes", n)
+	}
 }
 
 // ---- Config sync ----
