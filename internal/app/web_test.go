@@ -37,9 +37,10 @@ func newWebApp(t *testing.T) *App {
 
 func withEndpoints(t *testing.T, ddg, brave string) {
 	t.Helper()
-	oldD, oldB, oldP := ddgURL, braveURL, allowPrivateIP
-	ddgURL, braveURL, allowPrivateIP = ddg, brave, true // test servers are on 127.0.0.1
-	t.Cleanup(func() { ddgURL, braveURL, allowPrivateIP = oldD, oldB, oldP })
+	oldD, oldL, oldW, oldB, oldP := ddgURL, ddgLiteURL, wikipediaURL, braveURL, allowPrivateIP
+	// Test servers are on 127.0.0.1; nothing here reaches the internet.
+	ddgURL, ddgLiteURL, wikipediaURL, braveURL, allowPrivateIP = ddg, ddg, "http://127.0.0.1:1/", brave, true
+	t.Cleanup(func() { ddgURL, ddgLiteURL, wikipediaURL, braveURL, allowPrivateIP = oldD, oldL, oldW, oldB, oldP })
 }
 
 func TestWebSearchProvidersAndFallback(t *testing.T) {
@@ -97,7 +98,7 @@ func TestWebSearchProvidersAndFallback(t *testing.T) {
 	// A bad key gives a clear message, and both failures are reported.
 	a.SaveWebSettings(WebSettings{DuckDuckGo: true, Brave: true, BraveKey: "bad-key"})
 	_, _, err = a.WebSearch(ctx, "llama.cpp")
-	if err == nil || !strings.Contains(err.Error(), "human check") || !strings.Contains(err.Error(), "key was rejected") {
+	if err == nil || !strings.Contains(err.Error(), "limiting searches") || !strings.Contains(err.Error(), "key was rejected") {
 		t.Fatalf("expected both errors, got %v", err)
 	}
 
@@ -235,5 +236,47 @@ func TestStripToolCalls(t *testing.T) {
 	in := "Here.\n<tool_call>\n{\"name\": \"web_search\"}\n</tool_call>\nDone.<tool_call>{\"name\""
 	if got := stripToolCalls(in); got != "Here.\n\nDone." {
 		t.Fatalf("got %q", got)
+	}
+}
+
+const ddgLitePage = `<table><tr><td><a rel="nofollow" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fgo.dev%2Fdoc%2Fdevel%2Frelease&amp;rut=x" class='result-link'>Release History - The Go Programming Language</a></td></tr>
+<tr><td class='result-snippet'>Go <b>1.25</b> is a major release of Go.</td></tr></table>`
+
+func TestSearchFallbacks(t *testing.T) {
+	// The HTML page is throttled (HTTP 202); the lite page answers.
+	html := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(202) }))
+	defer html.Close()
+	lite := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.FormValue("q") == "" || r.Header.Get("Accept-Language") == "" {
+			http.Error(w, "bad", 400)
+			return
+		}
+		w.Write([]byte(ddgLitePage))
+	}))
+	defer lite.Close()
+	withEndpoints(t, html.URL, "")
+	ddgLiteURL = lite.URL
+	a := newWebApp(t)
+	a.SaveWebSettings(WebSettings{DuckDuckGo: true})
+	res, provider, err := a.WebSearch(context.Background(), "go release")
+	if err != nil || provider != "DuckDuckGo" || len(res) != 1 || res[0].URL != "https://go.dev/doc/devel/release" || res[0].Snippet != "Go 1.25 is a major release of Go." {
+		t.Fatalf("lite: %v %s %+v", err, provider, res)
+	}
+
+	// Both DuckDuckGo pages throttled: Wikipedia's search is the last resort.
+	ddgLiteURL = html.URL
+	wiki := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("srsearch") != "go release" || r.Header.Get("User-Agent") == "" {
+			http.Error(w, "bad", 400)
+			return
+		}
+		w.Write([]byte(`{"query":{"search":[{"title":"Go (programming language)","snippet":"Go is a <span class=\"searchmatch\">programming</span> language"}]}}`))
+	}))
+	defer wiki.Close()
+	wikipediaURL = wiki.URL
+	res, provider, err = a.WebSearch(context.Background(), "go release")
+	if err != nil || !strings.HasPrefix(provider, "Wikipedia") || !strings.Contains(provider, "limiting searches") || len(res) != 1 ||
+		res[0].URL != "https://en.wikipedia.org/wiki/Go_%28programming_language%29" || res[0].Snippet != "Go is a programming language" {
+		t.Fatalf("wikipedia: %v %s %+v", err, provider, res)
 	}
 }

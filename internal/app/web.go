@@ -37,6 +37,8 @@ type WebSettings struct {
 // Endpoints are variables so tests can point them at local servers.
 var (
 	ddgURL         = "https://html.duckduckgo.com/html/"
+	ddgLiteURL     = "https://lite.duckduckgo.com/lite/"
+	wikipediaURL   = "https://en.wikipedia.org/w/api.php"
 	braveURL       = "https://api.search.brave.com/res/v1/web/search"
 	allowPrivateIP = false // tests only
 )
@@ -127,6 +129,11 @@ func (a *App) WebSearch(ctx context.Context, query string) ([]SearchResult, stri
 	if len(errs) == 0 {
 		return nil, "", errors.New("internet access is off — turn on DuckDuckGo or Brave in Agents → Internet access")
 	}
+	// Last resort without a key: Wikipedia's public search, good for facts
+	// and background (not news).
+	if res, err := searchWikipedia(ctx, query); err == nil && len(res) > 0 {
+		return res, "Wikipedia (the web search failed: " + strings.Join(errs, "; ") + ")", nil
+	}
 	return nil, "", errors.New(strings.Join(errs, "; "))
 }
 
@@ -147,21 +154,57 @@ func cleanHTML(s string) string {
 	return strings.Join(strings.Fields(html.UnescapeString(reTags.ReplaceAllString(s, ""))), " ")
 }
 
-// searchDuckDuckGo uses DuckDuckGo's no-JavaScript HTML results page.
+// errDDGLimited: DuckDuckGo answers automated-looking searches with HTTP 202
+// or a "human check" page instead of results.
+var errDDGLimited = errors.New("DuckDuckGo is limiting searches from this computer for now (it does this to automated searches); try again in a few minutes, or turn on Brave")
+
+// browserHeaders makes a request look like an ordinary browser's, which
+// search pages and many websites expect.
+func browserHeaders(req *http.Request) {
+	req.Header.Set("User-Agent", webUserAgent)
+	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+	req.Header.Set("Accept-Language", "en-US,en;q=0.9")
+}
+
+// searchDuckDuckGo uses DuckDuckGo's no-JavaScript results page, then its
+// "lite" page, which often still answers when the first is throttled.
 func searchDuckDuckGo(ctx context.Context, query string) ([]SearchResult, error) {
-	form := url.Values{"q": {query}}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, ddgURL, strings.NewReader(form.Encode()))
+	res, err := fetchDDG(ctx, ddgURL, query, reDDGLink, reDDGSnippet)
+	if err == nil {
+		return res, nil
+	}
+	if res2, err2 := fetchDDG(ctx, ddgLiteURL, query, reDDGLiteLink, reDDGLiteSnippet); err2 == nil {
+		return res2, nil
+	}
+	return nil, err
+}
+
+var (
+	reDDGLiteLink    = regexp.MustCompile(`(?s)<a[^>]+href="([^"]+)"[^>]*class=['"]result-link['"][^>]*>(.*?)</a>`)
+	reDDGLiteSnippet = regexp.MustCompile(`(?s)<td[^>]*class=['"]result-snippet['"][^>]*>(.*?)</td>`)
+)
+
+func fetchDDG(ctx context.Context, endpoint, query string, reLink, reSnippet *regexp.Regexp) ([]SearchResult, error) {
+	form := url.Values{"q": {query}, "kl": {""}}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(form.Encode()))
 	if err != nil {
 		return nil, err
 	}
+	browserHeaders(req)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("User-Agent", webUserAgent)
+	if u, err := url.Parse(endpoint); err == nil {
+		req.Header.Set("Origin", u.Scheme+"://"+u.Host)
+		req.Header.Set("Referer", u.Scheme+"://"+u.Host+"/")
+	}
 	resp, err := webClient().Do(req)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
+	switch {
+	case resp.StatusCode == http.StatusAccepted, resp.StatusCode == http.StatusForbidden, resp.StatusCode == http.StatusTooManyRequests:
+		return nil, errDDGLimited
+	case resp.StatusCode != http.StatusOK:
 		return nil, fmt.Errorf("HTTP %s", resp.Status)
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxPageBytes))
@@ -169,11 +212,11 @@ func searchDuckDuckGo(ctx context.Context, query string) ([]SearchResult, error)
 		return nil, err
 	}
 	page := string(body)
-	if strings.Contains(page, "anomaly-modal") || strings.Contains(page, "challenge-form") {
-		return nil, errors.New("DuckDuckGo asked for a human check (too many searches); try again later or use Brave")
+	if strings.Contains(page, "anomaly-modal") || strings.Contains(page, "challenge-form") || strings.Contains(page, "anomaly.js") {
+		return nil, errDDGLimited
 	}
-	links := reDDGLink.FindAllStringSubmatch(page, -1)
-	snippets := reDDGSnippet.FindAllStringSubmatch(page, -1)
+	links := reLink.FindAllStringSubmatch(page, -1)
+	snippets := reSnippet.FindAllStringSubmatch(page, -1)
 	var out []SearchResult
 	for i, m := range links {
 		u := ddgTarget(html.UnescapeString(m[1]))
@@ -189,8 +232,45 @@ func searchDuckDuckGo(ctx context.Context, query string) ([]SearchResult, error)
 			break
 		}
 	}
-	if len(out) == 0 && !strings.Contains(page, "No results") {
+	if len(out) == 0 && !strings.Contains(page, "No results") && !strings.Contains(page, "No more results") {
 		return nil, errors.New("could not read DuckDuckGo's results page (its layout may have changed)")
+	}
+	return out, nil
+}
+
+// searchWikipedia uses Wikipedia's public search API (no key needed).
+func searchWikipedia(ctx context.Context, query string) ([]SearchResult, error) {
+	u := wikipediaURL + "?" + url.Values{"action": {"query"}, "list": {"search"}, "srsearch": {query},
+		"srlimit": {fmt.Sprint(searchResults)}, "format": {"json"}, "utf8": {"1"}}.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return nil, err
+	}
+	// Wikimedia asks API clients to identify themselves.
+	req.Header.Set("User-Agent", "PrivateAI/1.0 (offline assistant on a USB drive)")
+	resp, err := webClient().Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("HTTP %s", resp.Status)
+	}
+	var data struct {
+		Query struct {
+			Search []struct {
+				Title   string `json:"title"`
+				Snippet string `json:"snippet"`
+			} `json:"search"`
+		} `json:"query"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxPageBytes)).Decode(&data); err != nil {
+		return nil, err
+	}
+	var out []SearchResult
+	for _, r := range data.Query.Search {
+		out = append(out, SearchResult{Title: r.Title, Snippet: cleanHTML(r.Snippet),
+			URL: "https://en.wikipedia.org/wiki/" + url.PathEscape(strings.ReplaceAll(r.Title, " ", "_"))})
 	}
 	return out, nil
 }
@@ -346,7 +426,7 @@ func (a *App) ReadWebpage(ctx context.Context, raw string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	req.Header.Set("User-Agent", webUserAgent)
+	browserHeaders(req)
 	req.Header.Set("Accept", "text/html,application/xhtml+xml,text/plain,application/pdf;q=0.9,*/*;q=0.5")
 	resp, err := webClient().Do(req)
 	if err != nil {
