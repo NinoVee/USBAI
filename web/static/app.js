@@ -1262,6 +1262,43 @@ function getAudioCtx() {
 // All speakers have feed(raw), end(raw, onDone), stop(), and call onStart
 // when sound begins. level() is the output loudness (0..1) when known.
 
+// clauseEnd finds a comma, semicolon, colon or dash after at least minLen
+// speakable characters, so speech can start before the sentence ends.
+// "1,000" has no space after its comma and never splits.
+function clauseEnd(t, minLen) {
+  const re = /[,;:]["'”’)\]]*(?=\s)|\s[—–-]\s/g;
+  let m;
+  while ((m = re.exec(t))) {
+    const end = m.index + m[0].length;
+    const head = t.slice(0, end);
+    if ((head.match(/```/g) || []).length % 2) continue;
+    if (/<think>(?![\s\S]*<\/think>)/.test(head)) continue;
+    if (speechText(head).length < minLen) continue;
+    return end;
+  }
+  return 0;
+}
+
+// nextChunk is where the next piece to speak ends: a whole sentence, or for
+// the very first piece (and very long sentences) the first good clause, so
+// the voice starts as early as possible.
+function nextChunk(rest, first) {
+  return sentenceEnd(rest) || (first ? clauseEnd(rest, 18) || conjunctionBreak(rest) : rest.length > 220 ? clauseEnd(rest, 80) : 0);
+}
+
+// conjunctionBreak splits a long opening with no punctuation before a
+// joining word ("… and", "… because"), a natural place to take a breath.
+function conjunctionBreak(t) {
+  const re = /\s(?=(?:and|but|because|so|which|that|when|while|where|although|or)\s)/gi;
+  let m;
+  while ((m = re.exec(t))) {
+    const head = t.slice(0, m.index + 1);
+    if ((head.match(/```/g) || []).length % 2 || /<think>(?![\s\S]*<\/think>)/.test(head)) return 0;
+    if (speechText(head).length >= 40) return m.index + 1;
+  }
+  return 0;
+}
+
 let activeSpeaker = null;
 function makeSpeaker(voice, hooks = {}) {
   voice = resolveVoice(voice);
@@ -1279,7 +1316,7 @@ function speakerBase(say, hooks) {
     busy: () => false,
     feed(raw) {
       let cut;
-      while (!stopped && (cut = sentenceEnd(raw.slice(done)))) { say(raw.slice(done, done + cut)); done += cut; }
+      while (!stopped && (cut = nextChunk(raw.slice(done), done === 0))) { say(raw.slice(done, done + cut)); done += cut; }
     },
     end(raw, cb) {
       if (!stopped) say(raw.slice(done));

@@ -131,7 +131,10 @@ Image reader**.
   app, so nothing is downloaded while you use it. The computer's own
   on-device voices are offered as well and are used as a fallback. Each
   agent can have its own voice (Agents → Edit → Voice), and every reply has
-  a 🔊 button. Code, links and Markdown symbols are skipped.
+  a 🔊 button. Code, links and Markdown symbols are skipped. To start
+  talking sooner, the first piece is spoken as soon as a phrase is complete
+  (at a comma or colon, or before a word like "and" or "because" in a long
+  opening), and later pieces are whole sentences.
 - **📞 Live voice call.** A call screen where you just talk. The mic stays
   open, a pause ends your turn, and the reply is spoken as it is written.
   Speak while the agent is talking (or still thinking) to interrupt it; this
