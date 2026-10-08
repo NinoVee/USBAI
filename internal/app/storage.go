@@ -96,3 +96,11 @@ func (a *App) Storage() (StorageReport, error) {
 	storageCache.report, storageCache.locked = r, locked
 	return r, nil
 }
+
+// forgetStorage makes the next report measure again (after the cache is
+// cleared, for example).
+func forgetStorage() {
+	storageCache.Lock()
+	storageCache.report = StorageReport{}
+	storageCache.Unlock()
+}

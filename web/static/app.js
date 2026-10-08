@@ -1013,11 +1013,23 @@ $("cache-on").addEventListener("change", async (e) => {
   await api("POST", "/api/cache", { enabled: e.target.checked });
   refreshStatus();
 });
-$("cache-clear").addEventListener("click", async () => {
-  if (!confirm("Remove the cached models from this computer? They stay on the drive.")) return;
-  await api("DELETE", "/api/cache");
-  refreshStatus();
-});
+// Removes the model copies from this computer's disk (they stay on the
+// drive), and offers to stop making new ones.
+async function clearCache() {
+  if (!confirm("Remove the cached AI models from this computer?\n\nThey stay on the drive; models just load more slowly next time. Your chats, files and memory are never in the cache.")) return;
+  try {
+    await api("DELETE", "/api/cache");
+    const st = await refreshStatus();
+    if (st && st.cache_on && confirm("Also turn off Faster loading, so the models aren't copied to this computer again?\n\nChoose OK on a shared or borrowed computer.")) {
+      await api("POST", "/api/cache", { enabled: false });
+      refreshStatus();
+    }
+  } catch (err) {
+    alert("Could not remove the cache: " + err.message);
+  }
+  refreshStorage();
+}
+$("cache-clear").addEventListener("click", clearCache);
 $("vision-select").addEventListener("change", async (e) => {
   await api("POST", "/api/vision/select", { id: e.target.value });
   e.target.blur();
@@ -1924,6 +1936,8 @@ async function refreshStorage() {
   legend.append(el("li", {}, el("i", { style: "background:var(--surface-2);border:1px solid var(--border)" }), "Free", el("b", {}, fmtBytes(r.free))));
   legend.append(el("li", { class: "sep", title: "Copies of AI models on this computer's disk (Settings → Faster loading)" },
     el("i", { style: `background:${CACHE_COLOR}` }), "Cache (this computer)", el("b", {}, fmtBytes(r.cache))));
+  if (r.cache) legend.append(el("li", { class: "storage-action" },
+    el("button", { type: "button", class: "storage-clear", onclick: clearCache }, "Clear cache from this computer")));
   bar.setAttribute("aria-label", `${fmtBytes(used)} of ${fmtBytes(r.total)} used`);
 }
 setInterval(refreshStorage, 30000);

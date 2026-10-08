@@ -208,6 +208,7 @@ func (a *App) CacheStatus() (names []string, bytes int64) {
 func (a *App) ClearCache() error {
 	a.cacheMu.Lock()
 	defer a.cacheMu.Unlock()
+	defer forgetStorage()
 	dir := a.cacheDir()
 	if dir == "" {
 		return nil

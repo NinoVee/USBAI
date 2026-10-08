@@ -198,7 +198,9 @@ input[type=range] { padding: 0; }
 .storage-legend li { display: flex; align-items: center; gap: 6px; color: var(--muted); }
 .storage-legend li b { font-weight: 400; color: var(--text); margin-left: auto; white-space: nowrap; }
 .storage-legend i { width: 9px; height: 9px; border-radius: 2px; flex: none; }
-.storage-legend li.note { font-size: 11px; display: block; }
+.storage-legend li.storage-action { font-size: 11px; display: block; }
+#storage .storage-clear { all: unset; cursor: pointer; font-size: 11px; color: var(--danger); text-decoration: underline; text-transform: none; letter-spacing: normal; }
+#storage .storage-clear:hover, #storage .storage-clear:focus-visible { opacity: .8; outline: 1px dotted var(--danger); }
 .storage-legend li.sep { border-top: 1px dashed var(--border); margin-top: 4px; padding-top: 5px; }
 :root[data-family="term"] .storage-head { text-transform: uppercase; letter-spacing: .08em; font-size: 11px; }
 
