@@ -64,7 +64,7 @@
         <label class="button attach" title="Attach images or files">📎<input type="file" id="attach-input" multiple hidden></label>
         <button type="button" class="mic" id="mic" title="Talk instead of typing" aria-label="Talk">🎤</button>
         <button type="button" class="mic" id="call-btn" title="Live voice call" aria-label="Live voice call">📞</button>
-        <textarea id="input" rows="1" placeholder="Ask anything…" autocomplete="off"></textarea>
+        <textarea id="input" rows="3" placeholder="Ask anything…" autocomplete="off"></textarea>
         <button type="submit" class="primary" id="send" aria-label="Send">➤</button>
       </form>
       <div class="composer-row">
@@ -226,8 +226,8 @@
         <button type="button" class="theme-btn" data-theme-choice="matrix" aria-pressed="false">
           <span class="swatch matrix">&gt; wake up_</span><span class="name">Matrix</span>
         </button>
-        <button type="button" class="theme-btn" data-theme-choice="claude" aria-pressed="false">
-          <span class="swatch claude"><b>✻</b>&nbsp;Welcome</span><span class="name">Claude Code</span>
+        <button type="button" class="theme-btn" data-theme-choice="prometheus" aria-pressed="false">
+          <span class="swatch prometheus"><b>◈</b>&nbsp;SYSTEMS ONLINE</span><span class="name">Prometheus</span>
         </button>
         <button type="button" class="theme-btn" data-theme-choice="terminal" aria-pressed="false">
           <span class="swatch terminal">~ % ▍</span><span class="name">Apple Terminal</span>
@@ -247,7 +247,7 @@
 
   <div id="call" class="call hidden" role="dialog" aria-label="Voice call" data-state="">
     <div class="call-who"><span id="call-emoji"></span> <span id="call-name"></span></div>
-    <div class="orb-wrap"><div class="orb" id="call-orb"></div></div>
+    <div class="orb-wrap"><canvas class="orb" id="call-orb" width="300" height="300" aria-hidden="true"></canvas></div>
     <div id="call-state" class="call-state">Connecting…</div>
     <div id="call-you" class="call-caption you"></div>
     <div id="call-them" class="call-caption them"></div>
@@ -264,13 +264,18 @@
     <button type="button" id="ocr-stop">Stop</button>
   </div>
 
-  <nav class="tabs hidden" id="tabs">
-    <button data-view="chat" class="active">Chat</button>
-    <button data-view="agents">Agents</button>
-    <button data-view="files">Files</button>
-    <button data-view="memory">Memory</button>
-    <button data-view="chats">Chats</button>
-    <button data-view="settings">Settings</button>
+  <nav class="tabs hidden" id="tabs" aria-label="Sections">
+    <button type="button" id="menu-toggle" class="menu-toggle" aria-expanded="true" aria-controls="menu-list">
+      <span class="menu-icon" aria-hidden="true">☰</span><span id="menu-current">Chat</span><span class="caret" aria-hidden="true">▾</span>
+    </button>
+    <div id="menu-list" class="menu-list">
+      <button data-view="chat" class="active"><span class="ico" aria-hidden="true">💬</span>Chat</button>
+      <button data-view="agents"><span class="ico" aria-hidden="true">🤖</span>Agents</button>
+      <button data-view="files"><span class="ico" aria-hidden="true">📁</span>Files</button>
+      <button data-view="memory"><span class="ico" aria-hidden="true">🧠</span>Memory</button>
+      <button data-view="chats"><span class="ico" aria-hidden="true">🗂</span>Chats</button>
+      <button data-view="settings"><span class="ico" aria-hidden="true">⚙️</span>Settings</button>
+    </div>
   </nav>
 
   <div id="drop" class="drop hidden">Drop files to add them privately</div>

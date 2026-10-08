@@ -218,7 +218,10 @@ function show(view) {
   state.view = view;
   document.querySelectorAll(".view").forEach((v) => v.classList.add("hidden"));
   $("view-" + view).classList.remove("hidden");
-  document.querySelectorAll("#tabs button").forEach((b) => b.classList.toggle("active", b.dataset.view === view));
+  document.querySelectorAll("#tabs button[data-view]").forEach((b) => b.classList.toggle("active", b.dataset.view === view));
+  const cur = document.querySelector(`#tabs button[data-view="${view}"]`);
+  if (cur) $("menu-current").textContent = cur.lastChild.textContent.trim();
+  if (window.matchMedia("(max-width: 760px)").matches) setMenu(false); // phones: close the menu after choosing
   if (view === "agents") renderAgents();
   if (view === "files") renderDocs();
   if (view === "memory") renderMemory();
@@ -226,7 +229,19 @@ function show(view) {
   if (view === "settings") renderSettings();
   if (view === "chat") $("input").focus();
 }
-document.querySelectorAll("#tabs button").forEach((b) => b.addEventListener("click", () => show(b.dataset.view)));
+document.querySelectorAll("#tabs button[data-view]").forEach((b) => b.addEventListener("click", () => show(b.dataset.view)));
+
+// The sections menu on the left opens and closes like a drop-down; the
+// choice is remembered on wide screens. On phones it starts closed.
+function setMenu(open) {
+  $("tabs").classList.toggle("collapsed", !open);
+  $("menu-toggle").setAttribute("aria-expanded", String(open));
+}
+$("menu-toggle").addEventListener("click", () => {
+  const open = $("tabs").classList.contains("collapsed");
+  setMenu(open);
+  if (!window.matchMedia("(max-width: 760px)").matches) prefs.set("menu-open", open ? "1" : "0");
+});
 
 // ---- Chat ----
 
@@ -428,7 +443,7 @@ $("input").addEventListener("keydown", (e) => {
 function autosize() {
   const t = $("input");
   t.style.height = "auto";
-  t.style.height = Math.min(t.scrollHeight, 200) + "px";
+  t.style.height = Math.min(t.scrollHeight, 320) + "px";
 }
 $("input").addEventListener("input", autosize);
 
@@ -1032,8 +1047,12 @@ const prefs = (() => {
   return { get, set };
 })();
 
-const THEMES = ["matrix", "claude", "terminal", "classic"];
-const theme = () => { const t = prefs.get("theme", "matrix"); return THEMES.includes(t) ? t : "matrix"; };
+const THEMES = ["matrix", "prometheus", "terminal", "classic"];
+const theme = () => {
+  let t = prefs.get("theme", "matrix");
+  if (t === "claude") t = "prometheus"; // the Claude Code theme was replaced
+  return THEMES.includes(t) ? t : "matrix";
+};
 
 function applyTheme() {
   const t = theme();
@@ -1047,6 +1066,11 @@ document.querySelectorAll(".theme-btn").forEach((b) => b.addEventListener("click
   applyTheme();
 }));
 applyTheme();
+// Wide windows use the remembered choice; narrow ones start closed.
+const narrow = window.matchMedia("(max-width: 760px)");
+const restoreMenu = () => setMenu(!narrow.matches && prefs.get("menu-open", "1") === "1");
+restoreMenu();
+narrow.addEventListener("change", restoreMenu);
 
 // A themed greeting typed on the lock screen.
 let wakeTimer = null;
@@ -1058,7 +1082,7 @@ function typeWake() {
   const now = new Date();
   const lines = {
     matrix: init ? "Wake up…\nThe Matrix has you.\nKnock, knock." : "Wake up…\nFollow the white rabbit.",
-    claude: init ? "✻ Welcome back to Private AI!\n  /unlock to continue" : "✻ Welcome to Private AI!\n  /init to create your vault",
+    prometheus: init ? "◈ Systems online.\n◈ Crew vault sealed. Awaiting authorization." : "◈ Systems online.\n◈ No crew vault found. Initialize to begin.",
     terminal: `Last login: ${now.toDateString().slice(0, 10)} ${now.toTimeString().slice(0, 8)} on ttys000\n~ % ${init ? "privateai unlock" : "privateai init"}`,
   }[theme()];
   if (!lines) return;
@@ -1603,8 +1627,10 @@ async function startCall() {
   $("call-you").textContent = "";
   $("call-them").textContent = "";
   $("call").classList.remove("hidden");
+  cloud.gather = 0;
   call = { state: "", muted: false, chunks: [], preroll: [], floor: 0.01, echo: 0, loud: 0, quiet: 0, t: 0, abort: null, speaker: null, turn: 0 };
   callSay("connecting", "Connecting…");
+  call.anim = requestAnimationFrame(animateOrb);
   renderMic();
   const voice = agentVoice(ag);
   if (voice.startsWith("kokoro:")) {
@@ -1620,7 +1646,6 @@ async function startCall() {
     return;
   }
   callSay("listening", "Listening…");
-  call.anim = requestAnimationFrame(animateOrb);
 }
 
 function onCallAudio(d, rms) {
@@ -1710,11 +1735,84 @@ async function endTurn() {
 
 const lastReply = () => { const m = [...document.querySelectorAll(".msg.assistant")].pop(); return (m && m._raw) || ""; };
 
-function animateOrb() {
+// ---- The call's particle cloud ----
+// A swirling sphere of glowing dots, like the Apple Watch pairing cloud,
+// in the theme's colours (--particles). It gathers when the call connects,
+// drifts while listening, follows your voice, swirls while thinking and
+// pulses with the agent's voice.
+
+const cloud = { pts: null, t: 0, last: 0, spin: 0, energy: 0, gather: 0 };
+
+function cloudPoints() {
+  const css = getComputedStyle(document.documentElement).getPropertyValue("--particles");
+  const colors = css.split(",").map((c) => c.trim()).filter(Boolean);
+  const pts = [];
+  for (let i = 0; i < 1600; i++) {
+    // Points spread through the sphere, denser towards its surface.
+    const u = Math.random() * 2 - 1, a = Math.random() * Math.PI * 2, s = Math.sqrt(1 - u * u);
+    const r = 0.45 + 0.55 * Math.cbrt(Math.random());
+    pts.push({
+      x: s * Math.cos(a) * r, y: u * r, z: s * Math.sin(a) * r,
+      swirl: 0.4 + Math.random() * 1.2, phase: Math.random() * 6.283, wob: 0.02 + Math.random() * 0.05,
+      // The first colours dominate; the last (e.g. amber) are rare sparks.
+      size: 0.45 + Math.random() * 1.15, color: colors[Math.floor(Math.pow(Math.random(), 1.8) * colors.length)] || "#4fe3f7",
+    });
+  }
+  return pts;
+}
+
+function animateOrb(now) {
   if (!call) return;
-  const lvl = call.state === "speaking" && call.speaker ? call.speaker.level() || 0.25
-    : call.state === "hearing" ? Math.min(1, (call.level || 0) * 10) : 0;
-  $("call-orb").style.setProperty("--level", lvl.toFixed(2));
+  const canvas = $("call-orb");
+  const dpr = window.devicePixelRatio || 1;
+  const w = Math.round(canvas.clientWidth * dpr), h = Math.round(canvas.clientHeight * dpr);
+  if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+  if (!cloud.pts || cloud.theme !== document.documentElement.dataset.theme) {
+    cloud.pts = cloudPoints();
+    cloud.theme = document.documentElement.dataset.theme;
+    cloud.gather = 0;
+  }
+  const dt = Math.min(0.05, ((now || 0) - (cloud.last || now || 0)) / 1000);
+  cloud.last = now || 0;
+  const calm = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0.3 : 1;
+  const st = call.state;
+  // Loudness that drives the cloud: your voice while you talk, the agent's
+  // voice while it speaks.
+  const level = st === "speaking" && call.speaker ? (call.speaker.level() || 0.2)
+    : st === "hearing" ? Math.min(1, (call.level || 0) * 10) : 0;
+  cloud.energy += (level - cloud.energy) * Math.min(1, dt * 12);
+  const speed = { connecting: 1.2, listening: 0.25, hearing: 0.6, thinking: 1.8, speaking: 0.5 }[st] ?? 0.3;
+  cloud.spin += dt * speed * calm;
+  cloud.t += dt * calm;
+  cloud.gather = Math.min(1, cloud.gather + dt / 1.2);
+  const g = 1 - Math.pow(1 - cloud.gather, 3); // ease out: dots converge when the call opens
+  const shrink = st === "thinking" ? 0.86 + 0.04 * Math.sin(cloud.t * 4) : 1 + 0.03 * Math.sin(cloud.t * 1.3);
+  const R = Math.min(w, h) * 0.34 * shrink * (1 + cloud.energy * 0.28) * (2.2 - 1.2 * g);
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, w, h);
+  ctx.globalCompositeOperation = "lighter";
+  const cy = Math.cos(cloud.spin), sy = Math.sin(cloud.spin);
+  const tilt = 0.35 + 0.15 * Math.sin(cloud.t * 0.4), cx = Math.cos(tilt), sx = Math.sin(tilt);
+  for (const p of cloud.pts) {
+    // Each dot drifts along its own little current.
+    const k = cloud.t * p.swirl + p.phase;
+    const jitter = p.wob * (1 + cloud.energy * 3);
+    let x = p.x + jitter * Math.sin(k), y = p.y + jitter * Math.cos(k * 1.3), z = p.z + jitter * Math.sin(k * 0.7);
+    if (st === "thinking") { const a = 0.6 * Math.sin(cloud.t * 2 + p.y * 3); const c = Math.cos(a), s2 = Math.sin(a); [x, z] = [x * c - z * s2, x * s2 + z * c]; }
+    [x, z] = [x * cy - z * sy, x * sy + z * cy];
+    [y, z] = [y * cx - z * sx, y * sx + z * cx];
+    const persp = 2.4 / (2.4 - z);
+    const px = w / 2 + x * R * persp, py = h / 2 + y * R * persp;
+    const depth = (z + 1) / 2;
+    ctx.globalAlpha = (0.15 + 0.85 * depth) * (0.35 + 0.65 * g);
+    ctx.fillStyle = p.color;
+    const size = p.size * dpr * persp * (0.8 + cloud.energy * 0.8);
+    ctx.beginPath();
+    ctx.arc(px, py, size, 0, 6.283);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = "source-over";
   call.anim = requestAnimationFrame(animateOrb);
 }
 

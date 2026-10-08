@@ -155,12 +155,24 @@ choice is remembered in this browser:
 
 - **Matrix** (default): green on black with terminal type, and a "Wake up…"
   greeting on the unlock screen.
-- **Claude Code**: warm charcoal and cream with a terracotta accent, plus the ✻
-  mark, `>` prompts and a "✻ Welcome" greeting.
+- **Prometheus**: the holographic bridge of a deep-space ship. Cold cyan light
+  on blue-black with a faint grid, amber highlights, angular panels, spaced
+  capital headings and a "◈ Systems online" greeting. (It replaced the Claude
+  Code theme; a saved Claude Code choice switches to it.)
 - **Apple Terminal**: a macOS Terminal window with the red, yellow and green
   title-bar dots, SF Mono, macOS-blue buttons and a "Last login… on ttys000"
   greeting.
 - **Classic**: the original light/dark look, which follows the system setting.
+
+The sections (Chat, Agents, Files, Memory, Chats, Settings) are in a menu on
+the left that opens and closes like a drop-down; the choice is remembered. On
+a phone or narrow window the menu sits above the page and closes after you
+pick a section. The typing box spans the page and grows as you type.
+
+The live call shows a **particle cloud**: a swirling sphere of glowing dots
+in the theme's colours, inspired by the Apple Watch pairing animation. It
+gathers when the call connects, drifts while listening, follows your voice,
+swirls while thinking and pulses with the agent's voice.
 
 ### Faster loading (model cache)
 
