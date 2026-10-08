@@ -35,13 +35,16 @@ func (a *App) voiceIDs() []string {
 	}
 	var ids []string
 	for _, x := range m.Extra {
-		if dir, file := path.Split(x.File); strings.HasSuffix(dir, "/voices/") && strings.HasSuffix(file, ".bin") {
+		if dir, file := path.Split(x.File); strings.HasSuffix(dir, "/voices/") && reVoiceFile.MatchString(file) {
 			ids = append(ids, strings.TrimSuffix(file, ".bin"))
 		}
 	}
 	sort.Strings(ids)
 	return ids
 }
+
+// Named voices: a (US) or b (UK), f or m, then a name, e.g. "am_michael".
+var reVoiceFile = regexp.MustCompile(`^[a-z][fm]_[a-z]+\.bin$`)
 
 // "/tts/<org>/<repo>/resolve/<revision>/<file>" is how transformers.js asks
 // for model files; "/tts/ort/<file>" is the ONNX runtime.

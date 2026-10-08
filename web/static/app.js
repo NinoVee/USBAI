@@ -1087,8 +1087,8 @@ const naturalVoices = () => ((state.status && state.status.voices) || []).slice(
   .sort((a, b) => ((KOKORO_BEST.indexOf(a) + 1 || 99) - (KOKORO_BEST.indexOf(b) + 1 || 99)) || a.localeCompare(b));
 function naturalLabel(id) {
   const who = { af: "US woman", am: "US man", bf: "UK woman", bm: "UK man" }[id.slice(0, 2)] || "";
-  const name = id.slice(3);
-  return `${name[0].toUpperCase()}${name.slice(1)} (${who})${KOKORO_BEST.includes(id) ? " ★" : ""}`;
+  const name = id.slice(3) || id;
+  return `${name[0].toUpperCase()}${name.slice(1)}${who ? ` (${who})` : ""}${KOKORO_BEST.includes(id) ? " ★" : ""}`;
 }
 
 function systemVoices() {

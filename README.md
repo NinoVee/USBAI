@@ -121,15 +121,32 @@ Image reader**.
   engine. Recordings are never saved and never leave the computer.
   Browser dictation is not used, because it sends audio to Apple or Google.
 - **🔊 Speak replies.** Replies are read aloud sentence by sentence as they
-  are written, using the computer's own voices. Only on-device voices are
-  offered. Each agent can have its own voice (Agents → Edit → Voice), and
-  every reply has a 🔊 button. Code, links and Markdown symbols are skipped.
-- **Hands-free** (Settings → Voice, on by default): what you say is sent right
-  away, and when 🔊 is on the mic opens again after the reply is spoken, for
-  a back-and-forth conversation.
-- Safari asks once for microphone permission. On a Mac, better voices are free
-  in System Settings → Accessibility → Spoken Content → System voice →
-  Manage Voices.
+  are written. The default is **natural voices**:
+  [Kokoro 82M](https://huggingface.co/hexgrad/Kokoro-82M) (Apache-2.0), with
+  28 US and UK English voices, run in the browser by
+  [kokoro-js](https://github.com/hexgrad/kokoro) and ONNX Runtime Web in a
+  background worker. It runs on the graphics chip (WebGPU) when the browser
+  has one, otherwise on the processor's cores. The model, voices and runtime
+  are on the drive (`models/voice/kokoro`, about 455 MB) and served by the
+  app, so nothing is downloaded while you use it. The computer's own
+  on-device voices are offered as well and are used as a fallback. Each
+  agent can have its own voice (Agents → Edit → Voice), and every reply has
+  a 🔊 button. Code, links and Markdown symbols are skipped.
+- **📞 Live voice call.** A call screen where you just talk. The mic stays
+  open, a pause ends your turn, and the reply is spoken as it is written.
+  Speak while the agent is talking (or still thinking) to interrupt it; this
+  also stops the reply on the server. Pausing mid-sentence before the agent
+  answers continues your turn instead of cutting it. Mute and End call
+  buttons are on screen, and Esc hangs up. Echo cancellation keeps the agent
+  from hearing itself; headphones work best.
+- **Hands-free** (Settings → Voice, on by default): what you say with 🎤 is
+  sent right away, and when 🔊 is on the mic opens again after the reply.
+- Safari asks once for microphone permission. In testing on a 4-core
+  processor without a graphics chip, Kokoro ran at about 0.4× real time, so
+  sentences arrived with pauses. Apple-silicon Macs are much faster,
+  especially with WebGPU. Settings → Voice shows how fast it runs on yours.
+- Licenses: kokoro-js bundles a phonemizer built from espeak-ng (GPL-3.0).
+  If you distribute drives, include its source or an offer for it.
 
 ### Appearance
 
@@ -272,6 +289,7 @@ laptop; the R1 distill below is the version that runs locally.
 | `qwen3-1.7b` | Qwen3 1.7B Q4_K_M | ~1.1 GB | 4 GB+ |
 | `nomic-embed` | nomic-embed-text v1.5 Q8_0 | ~140 MB | — |
 | `qwen3-asr-0.6b` | Qwen3-ASR 0.6B Q8_0 + audio encoder, speech to text (Apache-2.0) | ~1.0 GB | 4 GB+ |
+| `kokoro` | Kokoro 82M (q8 for the processor, fp32 for WebGPU), 28 English voices, ONNX Runtime Web: natural voices (Apache-2.0) | ~455 MB | — |
 
 To use any other GGUF model, add an entry to `config.json`. For a vision
 model, also set `mmproj` and `mmproj_url`. When `build-drive.sh` runs on an

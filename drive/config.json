@@ -173,12 +173,6 @@
           "sha256": "be1cb066d6ef6b074b3f15e6a6dd21ac88ff3cdaedf325f0aaed686c70f75d20"
         },
         {
-          "file": "models/voice/kokoro/voices/af.bin",
-          "url": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/af.bin",
-          "size": 524288,
-          "sha256": "a4f11d9d055a12bfa0db2668a3e4f0ef8fd1f1ccca69494479718e44dbf9e41a"
-        },
-        {
           "file": "models/voice/kokoro/voices/af_alloy.bin",
           "url": "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/af_alloy.bin",
           "size": 522240,
