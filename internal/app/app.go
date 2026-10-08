@@ -380,6 +380,10 @@ func (a *App) startChat() {
 const visionHelperMinRAMGB = 16
 
 // pickVisionHelper chooses the image-reader model, or explains why none.
+// memHeadroom is the memory left for the system, the browser and the
+// small engines when deciding whether two models fit.
+const memHeadroom = 4 << 30
+
 func (a *App) pickVisionHelper(chat config.Model) (config.Model, string) {
 	if a.cfg.Vision(chat) {
 		return config.Model{}, "not needed: " + chat.Name + " can see images itself"
@@ -410,6 +414,12 @@ func (a *App) pickVisionHelper(chat config.Model) (config.Model, string) {
 	}
 	// The smallest vision model: it only has to read images.
 	sort.SliceStable(usable, func(i, j int) bool { return usable[i].Size+usable[i].MMProjSize < usable[j].Size+usable[j].MMProjSize })
+	// Both models must fit in memory next to the system and the browser;
+	// otherwise the system kills one of them.
+	if need := chat.Size + usable[0].Size + usable[0].MMProjSize + memHeadroom; a.host.RAMBytes > 0 && chat.Size > 0 && need > int64(a.host.RAMBytes) {
+		return config.Model{}, fmt.Sprintf("%s and an image reader need about %d GB of memory together; this computer has %d GB. Choose an image reader in Settings to run one anyway",
+			chat.Name, (need+(1<<30)-1)>>30, a.host.RAMGB())
+	}
 	return usable[0], ""
 }
 

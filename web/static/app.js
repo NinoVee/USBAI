@@ -42,12 +42,28 @@ const fmtDate = (s) => new Date(s).toLocaleString();
 function escapeHTML(s) {
   return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 }
+// Some models (gpt-oss) write math as LaTeX; show it as plain math.
+const LATEX_SYMBOLS = { times: "×", cdot: "·", div: "÷", approx: "≈", le: "≤", leq: "≤", ge: "≥", geq: "≥", neq: "≠", pm: "±",
+  to: "→", rightarrow: "→", Rightarrow: "⇒", infty: "∞", "%": "%", "$": "$", ",": " ", ";": " ", ":": " ", "!": "", quad: "  ", qquad: "   " };
+function latexLite(t) {
+  return t
+    .replace(/\\\[\s*([\s\S]*?)\s*\\\]/g, (_, m) => "\n" + m.trim() + "\n")
+    .replace(/\\\(\s*([\s\S]*?)\s*\\\)/g, "$1")
+    .replace(/\\(?:text|mathrm|textbf|mathbf|operatorname|boxed)\{([^{}]*)\}/g, "$1")
+    .replace(/\\frac\{([^{}]*)\}\{([^{}]*)\}/g, "($1)/($2)")
+    .replace(/\\sqrt\{([^{}]*)\}/g, "√($1)")
+    .replace(/\\(left|right)(?![a-zA-Z])/g, "")
+    .replace(/\\([a-zA-Z]+|[%$,;:!])/g, (m, c) => LATEX_SYMBOLS[c] ?? m)
+    .replace(/\^\{([^{}]*)\}/g, "^$1");
+}
+
 function markdown(src) {
   const blocks = [];
   let s = escapeHTML(src).replace(/```[\w-]*\n?([\s\S]*?)(```|$)/g, (_, code) => {
     blocks.push("<pre><code>" + code.replace(/\n$/, "") + "</code></pre>");
     return "\u0000" + (blocks.length - 1) + "\u0000";
   });
+  s = latexLite(s);
   const inline = (t) => t
     .replace(/`([^`]+)`/g, "<code>$1</code>")
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
@@ -1126,7 +1142,7 @@ function fillVoices(sel, current, firstLabel) {
 
 // Text as it should sound: no Markdown symbols, code, links or emoji.
 function speechText(t) {
-  return t.replace(/<think>[\s\S]*?(<\/think>|$)/g, "").replace(/<tool_call>[\s\S]*?(<\/tool_call>|$)/g, "")
+  return latexLite(t).replace(/<think>[\s\S]*?(<\/think>|$)/g, "").replace(/<tool_call>[\s\S]*?(<\/tool_call>|$)/g, "")
     .replace(/```[\s\S]*?(```|$)/g, " The code is shown on screen. ")
     .replace(/`([^`]*)`/g, "$1")
     .replace(/!\[[^\]]*\]\([^)]*\)/g, "")

@@ -146,3 +146,30 @@ func TestVoiceFiles(t *testing.T) {
 		}
 	}
 }
+
+// TestImageReaderMemoryFit starts the image reader automatically only when
+// it fits in memory next to a big text-only chat model.
+func TestImageReaderMemoryFit(t *testing.T) {
+	root := t.TempDir()
+	for _, f := range []string{"models/chat/vl.gguf", "models/chat/mmproj.gguf"} {
+		os.MkdirAll(filepath.Dir(filepath.Join(root, f)), 0o755)
+		os.WriteFile(filepath.Join(root, f), []byte("GGUF"), 0o644)
+	}
+	cfg := config.Default()
+	cfg.Root = root
+	big := config.Model{ID: "oss", Name: "Big", Role: "chat", File: "models/chat/oss.gguf", Size: 12 << 30}
+	cfg.Models = []config.Model{big, {ID: "vl", Name: "VL", Role: "chat", File: "models/chat/vl.gguf", Size: 4, MMProj: "models/chat/mmproj.gguf", MMProjSize: 4}}
+	host := platform.Detect()
+	for ram, wantReader := range map[uint64]bool{15 << 30: false, 24 << 30: true} {
+		host.RAMBytes = ram
+		a := New(cfg, host, io.Discard)
+		m, why := a.pickVisionHelper(big)
+		if (m.ID == "vl") != wantReader {
+			t.Errorf("%d GB: reader %q, reason %q", ram>>30, m.ID, why)
+		}
+		if !wantReader && !strings.Contains(why, "memory") {
+			t.Errorf("%d GB: unclear reason %q", ram>>30, why)
+		}
+		a.Stop()
+	}
+}
