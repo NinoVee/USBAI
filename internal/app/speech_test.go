@@ -173,3 +173,54 @@ func TestImageReaderMemoryFit(t *testing.T) {
 		a.Stop()
 	}
 }
+
+// TestOneChatLoadAtATime: choosing the model that is loading does not load
+// it again, and choosing another one cancels the load in progress.
+func TestOneChatLoadAtATime(t *testing.T) {
+	root := t.TempDir()
+	host := platform.Detect()
+	host.Accel = nil
+	rt := filepath.Join(root, "runtime", host.Slug()+"-cpu")
+	if out, err := exec.Command("go", "build", "-o", filepath.Join(rt, host.ServerBinary()), "./testdata/fakellama").CombinedOutput(); err != nil {
+		t.Fatalf("build fake server: %v\n%s", err, out)
+	}
+	for _, f := range []string{"models/chat/a.gguf", "models/chat/b.gguf"} {
+		os.MkdirAll(filepath.Dir(filepath.Join(root, f)), 0o755)
+		os.WriteFile(filepath.Join(root, f), []byte("GGUF"), 0o644)
+	}
+	t.Setenv("FAKELLAMA_DELAY", "2s")
+	cfg := config.Default()
+	cfg.Root = root
+	cfg.Models = []config.Model{{ID: "a", Name: "Model A", Role: "chat", File: "models/chat/a.gguf"}, {ID: "b", Name: "Model B", Role: "chat", File: "models/chat/b.gguf"}}
+	log := &syncBuf{}
+	a := New(cfg, host, log)
+	defer a.Stop()
+	srv := httptest.NewUnstartedServer(nil)
+	srv.Config.Handler = a.Handler(fstest.MapFS{}, srv.Listener.Addr().(*net.TCPAddr).Port)
+	srv.Start()
+	defer srv.Close()
+	ts := &testServer{t: t, a: a, base: srv.URL}
+
+	go a.startChat() // loads A (slowly)
+	time.Sleep(300 * time.Millisecond)
+	ts.call("POST", "/api/models/select", map[string]string{"id": "a"}, nil)
+	time.Sleep(300 * time.Millisecond)
+	ts.call("POST", "/api/models/select", map[string]string{"id": "b"}, nil)
+	deadline := time.Now().Add(20 * time.Second)
+	for {
+		if _, m, ok := a.chatEngine(); ok && m.ID == "b" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("model B not ready:\n%s", log.String())
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	time.Sleep(2500 * time.Millisecond) // A's cancelled load must not come back
+	if n := strings.Count(log.String(), `Starting chat model "Model A"`); n != 1 {
+		t.Errorf("model A loaded %d times:\n%s", n, log.String())
+	}
+	if _, m, ok := a.chatEngine(); !ok || m.ID != "b" {
+		t.Errorf("chat model after the switch: %q ready=%v", m.ID, ok)
+	}
+}

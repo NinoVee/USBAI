@@ -60,6 +60,8 @@ type App struct {
 	embedModel  config.Model
 	embedState  string
 	engGen      int // bumps on every chat-engine restart
+	// chatLoadCancel stops the chat model load in progress.
+	chatLoadCancel context.CancelFunc
 
 	// Image reader: a second, vision-capable model that describes images
 	// when the chat model can't see them.
@@ -211,7 +213,7 @@ func (a *App) threadsFor(m config.Model) int {
 
 // startServer tries each runtime candidate (GPU builds first, CPU last) and
 // returns the first that loads the model.
-func (a *App) startServer(m config.Model, embedding bool) (*llama.Server, string, error) {
+func (a *App) startServer(ctx context.Context, m config.Model, embedding bool) (*llama.Server, string, error) {
 	// Load from the host's cache when possible; queue copies otherwise.
 	var toCache []cachedFile
 	mf := cachedFile{rel: m.File, size: m.Size, sum: m.SHA256}
@@ -249,7 +251,7 @@ func (a *App) startServer(m config.Model, embedding bool) (*llama.Server, string
 			prefix = "speech"
 		}
 		a.logf("Starting %s model %q with runtime %s", prefix, m.Name, name)
-		srv, err := llama.Start(a.ctx, llama.Options{
+		srv, err := llama.Start(ctx, llama.Options{
 			RuntimeDir: dir,
 			Binary:     a.host.ServerBinary(),
 			Model:      modelPath,
@@ -270,7 +272,7 @@ func (a *App) startServer(m config.Model, embedding bool) (*llama.Server, string
 		}
 		a.logf("Runtime %s failed: %v", name, err)
 		errs = append(errs, fmt.Errorf("%s: %w", name, err))
-		if a.ctx.Err() != nil {
+		if ctx.Err() != nil {
 			break
 		}
 	}
@@ -312,6 +314,13 @@ func (a *App) startChat() {
 	a.engMu.Lock()
 	a.engGen++
 	gen := a.engGen
+	// Only one chat model loads at a time: two big models loading at
+	// once can need more memory than the computer has.
+	if a.chatLoadCancel != nil {
+		a.chatLoadCancel()
+	}
+	loadCtx, cancel := context.WithCancel(a.ctx)
+	a.chatLoadCancel = cancel
 	old := a.chat
 	a.chat = nil
 	a.chatState, a.chatErr, a.chatWarn = StateStarting, "", ""
@@ -346,13 +355,13 @@ func (a *App) startChat() {
 			a.engMu.Unlock()
 		}
 		var err error
-		srv, rt, err = a.startServer(m, false)
+		srv, rt, err = a.startServer(loadCtx, m, false)
 		if err == nil {
 			break
 		}
 		problems = append(problems, m.Name+": "+firstLine(err))
-		if a.ctx.Err() != nil {
-			return
+		if loadCtx.Err() != nil {
+			return // shutting down, or a newer load took over
 		}
 	}
 
@@ -448,7 +457,7 @@ func (a *App) startVision() {
 	old.Stop()
 
 	m.Context = 4096 // enough to describe an image
-	srv, _, err := a.startServer(m, false)
+	srv, _, err := a.startServer(a.ctx, m, false)
 
 	a.engMu.Lock()
 	defer a.engMu.Unlock()
@@ -508,7 +517,7 @@ func (a *App) startEmbed() {
 	a.embedModel = *m
 	a.engMu.Unlock()
 
-	srv, _, err := a.startServer(*m, true)
+	srv, _, err := a.startServer(a.ctx, *m, true)
 
 	a.engMu.Lock()
 	if a.ctx.Err() != nil {

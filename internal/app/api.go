@@ -383,7 +383,13 @@ func (a *App) handleSelectModel(w http.ResponseWriter, r *http.Request) {
 		httpError(w, err)
 		return
 	}
-	go a.startChat()
+	// Choosing the model that is already loading or running changes nothing.
+	a.engMu.Lock()
+	same := a.chatModel.ID == body.ID && (a.chatState == StateStarting || (a.chatState == StateReady && a.chat != nil && a.chat.Alive()))
+	a.engMu.Unlock()
+	if !same {
+		go a.startChat()
+	}
 	writeJSON(w, map[string]bool{"ok": true})
 }
 

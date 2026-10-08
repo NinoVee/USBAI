@@ -33,7 +33,7 @@ func (a *App) startSpeech() {
 	a.speechModel = *m
 	a.engMu.Unlock()
 
-	srv, _, err := a.startServer(*m, false)
+	srv, _, err := a.startServer(a.ctx, *m, false)
 
 	a.engMu.Lock()
 	defer a.engMu.Unlock()
