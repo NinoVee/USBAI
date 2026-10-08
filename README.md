@@ -100,7 +100,7 @@ to switch.
 
 ### Image reader (two models at once)
 
-If the chat model can't see images, for example Qwen3 14B or DeepSeek R1, a
+If the chat model can't see images, for example gpt-oss 20B or DeepSeek R1, a
 second, smaller vision model can run alongside it as the **image reader**. It
 describes each pasted image, transcribing all the text, and the chat model
 answers from that description, so agents and tools keep using the stronger
@@ -272,13 +272,13 @@ about an uploaded contract with correct citations.
 
 ### Default models
 
-Licenses: Qwen and DeepSeek are Apache-2.0 / MIT. Gemma uses Google's Gemma
+Licenses: Qwen, gpt-oss and DeepSeek are Apache-2.0 / MIT. Gemma uses Google's Gemma
 terms. Full DeepSeek R1/V3 (671B parameters, about 400 GB) is too large for a
 laptop; the R1 distill below is the version that runs locally.
 
 | id | model | size | RAM |
 |---|---|---|---|
-| `qwen3-14b` | Qwen3 14B Q4_K_M, best quality and the default at 16 GB+ | ~9.0 GB | 16 GB+ |
+| `gpt-oss-20b` | OpenAI gpt-oss 20B MXFP4 (Apache-2.0): mixture of experts, 21B parameters with about 3.6B active per word, so it reasons well and runs fast; thinks before answering; the default at 16 GB+ | ~12.1 GB | 16 GB+ |
 | `qwen3-8b` | Qwen3 8B Q4_K_M | ~5 GB | 16 GB+ |
 | `qwen3-vl-4b` | Qwen3-VL 4B Instruct Q4_K_M + mmproj Q8_0, **sees images** | ~2.9 GB | 8 GB+ |
 | `gang` | **GANG**: Qwen3-VL 4B with a hip-hop personality (no extra download) | — | 8 GB+ |
@@ -300,7 +300,10 @@ To **update a drive you already use**, shut Private AI down and run
 `scripts/update-drive.sh "/Volumes/GANG AI"` (with your drive's path). It
 rebuilds the programs, copies them and the launchers to the drive, and adds
 new model entries to the drive's `config.json`. Models and your data are
-untouched. If an update adds a new model, such as the speech model, download
+untouched. Models an update retires (listed under `retired_models` in
+`drive/config.json`, such as Qwen3 14B, replaced by gpt-oss 20B) are removed
+from the drive's `config.json` and their files deleted, unless another model
+still uses them. If an update adds a new model, such as the speech model, download
 it with `go run ./cmd/drivetool fetch-models -drive "/Volumes/GANG AI"`
 (already-present models are skipped).
 

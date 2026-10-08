@@ -4,17 +4,20 @@
   "gpu_layers": 99,
   "threads": 0,
   "extra_args": [],
+  "retired_models": [
+    "qwen3-14b"
+  ],
   "models": [
     {
-      "id": "qwen3-14b",
-      "name": "Qwen3 14B (best quality, needs 16 GB+)",
+      "id": "gpt-oss-20b",
+      "name": "gpt-oss 20B (smartest and fast, needs 16 GB+)",
       "role": "chat",
-      "file": "models/chat/Qwen3-14B-Q4_K_M.gguf",
-      "url": "https://huggingface.co/Qwen/Qwen3-14B-GGUF/resolve/main/Qwen3-14B-Q4_K_M.gguf",
-      "size": 9001752960,
-      "sha256": "500a8806e85ee9c83f3ae08420295592451379b4f8cf2d0f41c15dffeb6b81f0",
+      "file": "models/chat/gpt-oss-20b-MXFP4.gguf",
+      "url": "https://huggingface.co/ggml-org/gpt-oss-20b-GGUF/resolve/main/gpt-oss-20b-MXFP4.gguf",
+      "size": 12109566624,
+      "sha256": "27cd6c432c7672cb812a92f611cf3ba7bbc35928262bb1e1253ff4ee6ae35901",
       "min_ram_gb": 16,
-      "context": 8192
+      "context": 16384
     },
     {
       "id": "qwen3-8b",

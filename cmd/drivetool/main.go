@@ -775,6 +775,8 @@ func syncConfig(drive, template string) error {
 	json.Unmarshal(curMap["models"], &curModels)
 	var t struct {
 		Models []map[string]any `json:"models"`
+		// Retired models are removed from drives by updates.
+		Retired []string `json:"retired_models"`
 	}
 	if err := json.Unmarshal(tmpl, &t); err != nil {
 		return fmt.Errorf("%s: %w", template, err)
@@ -806,12 +808,24 @@ func syncConfig(drive, template string) error {
 			added = append(added, id)
 		}
 	}
+	retired := map[string]bool{}
+	for _, id := range t.Retired {
+		retired[id] = true
+	}
+	var removed []string
+	var oldFiles []string
 	for _, m := range curModels {
-		if !seen[fmt.Sprint(m["id"])] {
+		id := fmt.Sprint(m["id"])
+		switch {
+		case seen[id]:
+		case retired[id]:
+			removed = append(removed, id)
+			oldFiles = append(oldFiles, modelFiles(m)...)
+		default:
 			merged = append(merged, m)
 		}
 	}
-	if len(added) == 0 {
+	if len(added) == 0 && len(removed) == 0 {
 		fmt.Println("config.json already has every model")
 	}
 	b, _ := json.Marshal(merged)
@@ -826,7 +840,48 @@ func syncConfig(drive, template string) error {
 	if len(added) > 0 {
 		fmt.Printf("config.json: added %s\n", strings.Join(added, ", "))
 	}
+	if len(removed) > 0 {
+		fmt.Printf("config.json: removed %s\n", strings.Join(removed, ", "))
+	}
+	// Delete the files of removed models unless a remaining model uses them.
+	inUse := map[string]bool{}
+	for _, m := range merged {
+		for _, f := range modelFiles(m) {
+			inUse[f] = true
+		}
+	}
+	for _, f := range oldFiles {
+		if inUse[f] || strings.Contains(f, "..") || filepath.IsAbs(f) {
+			continue
+		}
+		p := filepath.Join(drive, filepath.FromSlash(f))
+		if st, err := os.Stat(p); err == nil && !st.IsDir() {
+			if err := os.Remove(p); err == nil {
+				fmt.Printf("  deleted %s (%.1f GB freed)\n", f, float64(st.Size())/(1<<30))
+			}
+		}
+	}
 	return nil
+}
+
+// modelFiles lists the drive-relative files a config.json model entry uses.
+func modelFiles(m map[string]any) []string {
+	var out []string
+	for _, k := range []string{"file", "mmproj"} {
+		if f, ok := m[k].(string); ok && f != "" {
+			out = append(out, f)
+		}
+	}
+	if xs, ok := m["extra"].([]any); ok {
+		for _, x := range xs {
+			if xm, ok := x.(map[string]any); ok {
+				if f, ok := xm["file"].(string); ok && f != "" {
+					out = append(out, f)
+				}
+			}
+		}
+	}
+	return out
 }
 
 // ---- Verify ----
