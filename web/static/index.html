@@ -63,6 +63,7 @@
       <form id="chat-form">
         <label class="button attach" title="Attach images or files">📎<input type="file" id="attach-input" multiple hidden></label>
         <button type="button" class="mic" id="mic" title="Talk instead of typing" aria-label="Talk">🎤</button>
+        <button type="button" class="mic" id="call-btn" title="Live voice call" aria-label="Live voice call">📞</button>
         <textarea id="input" rows="1" placeholder="Ask anything…" autocomplete="off"></textarea>
         <button type="submit" class="primary" id="send" aria-label="Send">➤</button>
       </form>
@@ -200,11 +201,19 @@
         <button id="cache-clear" class="danger">Remove cached models</button>
       </div>
       <h3>Voice</h3>
-      <p class="muted">Press 🎤 to talk instead of typing. Your voice is turned into text by a speech model on this drive (<span id="speech-status">checking…</span>), and recordings are never saved. With 🔊 <em>Speak replies</em> on, answers are read aloud by this computer's built-in voices; each agent can have its own. Neither uses the internet.</p>
+      <p class="muted">Press 🎤 to talk instead of typing, or 📞 for a live voice call. Your voice is turned into text by a speech model on this drive (<span id="speech-status">checking…</span>), and recordings are never saved. With 🔊 <em>Speak replies</em> on, answers are read aloud by natural voices from this drive (Kokoro) or this computer's own voices; each agent can have its own. None of it uses the internet.</p>
       <div class="vision-row voice-pick">
         <select id="voice-default" aria-label="Default voice"></select>
         <button type="button" id="voice-test">▶ Test</button>
       </div>
+      <div class="vision-row">
+        <label for="voice-engine">Run natural voices on</label>
+        <select id="voice-engine">
+          <option value="auto">the graphics chip when possible (fastest)</option>
+          <option value="cpu">the processor only</option>
+        </select>
+      </div>
+      <p id="voice-engine-status" class="muted small"></p>
       <label class="field">Speaking speed <output id="voice-rate-out"></output>
         <input type="range" id="voice-rate" min="0.6" max="1.6" step="0.1" value="1">
       </label>
@@ -235,6 +244,19 @@
       </div>
     </div>
   </section>
+
+  <div id="call" class="call hidden" role="dialog" aria-label="Voice call" data-state="">
+    <div class="call-who"><span id="call-emoji"></span> <span id="call-name"></span></div>
+    <div class="orb-wrap"><div class="orb" id="call-orb"></div></div>
+    <div id="call-state" class="call-state">Connecting…</div>
+    <div id="call-you" class="call-caption you"></div>
+    <div id="call-them" class="call-caption them"></div>
+    <div class="call-actions">
+      <button type="button" id="call-mute">🎤 Mute</button>
+      <button type="button" id="call-end" class="danger">End call</button>
+    </div>
+    <p class="muted small">Talk naturally and pause when you're done. Speak to interrupt. Headphones work best. Esc ends the call.</p>
+  </div>
 
   <div id="ocr-bar" class="ocr-bar hidden" role="status">
     <span id="ocr-text"></span>

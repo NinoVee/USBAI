@@ -4,11 +4,15 @@ import (
 	"bytes"
 	"encoding/binary"
 	"io"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/ninovee/usbai/internal/config"
@@ -84,5 +88,61 @@ func TestSpeechToText(t *testing.T) {
 	}
 	if _, err := a.Transcribe(make([]byte, maxSpeechBytes+1)); err == nil {
 		t.Fatal("oversized recording accepted")
+	}
+}
+
+func TestVoiceFiles(t *testing.T) {
+	root := t.TempDir()
+	files := map[string]string{
+		"models/voice/kokoro/onnx/model_quantized.onnx": "ONNX",
+		"models/voice/kokoro/voices/af_heart.bin":       "VOICE",
+		"models/voice/kokoro/ort/ort.wasm":              "WASM",
+		"models/voice/kokoro/secret.txt":                "not listed",
+		"data/vault/key":                                "never",
+	}
+	for f, body := range files {
+		os.MkdirAll(filepath.Dir(filepath.Join(root, f)), 0o755)
+		os.WriteFile(filepath.Join(root, f), []byte(body), 0o644)
+	}
+	cfg := config.Default()
+	cfg.Root = root
+	cfg.Models = []config.Model{{ID: "kokoro", Role: "voice", File: "models/voice/kokoro/onnx/model_quantized.onnx", Size: 4,
+		Extra: []config.ExtraFile{{File: "models/voice/kokoro/voices/af_heart.bin", Size: 5}, {File: "models/voice/kokoro/ort/ort.wasm", Size: 4}}}}
+	a := New(cfg, platform.Detect(), io.Discard)
+	defer a.Stop()
+	if ids := a.voiceIDs(); len(ids) != 1 || ids[0] != "af_heart" {
+		t.Fatalf("voices: %v", ids)
+	}
+	srv := httptest.NewUnstartedServer(nil)
+	srv.Config.Handler = a.Handler(fstest.MapFS{}, srv.Listener.Addr().(*net.TCPAddr).Port)
+	srv.Start()
+	defer srv.Close()
+	get := func(p string) (int, string, http.Header) {
+		req, _ := http.NewRequest("GET", srv.URL+p, nil)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, string(b), resp.Header
+	}
+	for p, want := range map[string]string{
+		"/tts/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/onnx/model_quantized.onnx": "ONNX",
+		"/tts/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/voices/af_heart.bin":       "VOICE",
+		"/tts/ort/ort.wasm": "WASM",
+	} {
+		code, body, h := get(p)
+		if code != 200 || body != want {
+			t.Errorf("%s: %d %q", p, code, body)
+		}
+		if h.Get("Cross-Origin-Embedder-Policy") != "require-corp" {
+			t.Errorf("%s: no cross-origin isolation headers", p)
+		}
+	}
+	for _, p := range []string{"/tts/secret.txt", "/tts/x/y/resolve/main/secret.txt", "/tts/../../data/vault/key", "/tts/ort/..%2F..%2F..%2F..%2Fdata%2Fvault%2Fkey"} {
+		if code, body, _ := get(p); code == 200 {
+			t.Errorf("%s served: %q", p, body)
+		}
 	}
 }

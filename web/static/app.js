@@ -308,7 +308,9 @@ function addMessage(role, content, sources, images, steps, agentName) {
   return msg;
 }
 
-async function send(text, fromVoice) {
+// opts: fromVoice (said with the mic), speaker (a live call's), signal
+// (aborts the turn), onText (the reply so far).
+async function send(text, opts = {}) {
   const images = state.images.slice();
   if (state.busy || (!text.trim() && !images.length)) return;
   state.busy = true;
@@ -322,10 +324,11 @@ async function send(text, fromVoice) {
   const body = msg.querySelector(".body");
   body.classList.add("typing");
   let raw = "";
-  const speaker = voicePrefs.speak ? makeSpeaker(ag && ag.voice) : null;
+  const speaker = opts.speaker !== undefined ? opts.speaker : voicePrefs.speak ? makeSpeaker(agentVoice(ag)) : null;
   try {
     const res = await fetch("/api/chat", {
       method: "POST",
+      signal: opts.signal,
       headers: { ...H, "Content-Type": "application/json" },
       body: JSON.stringify({
         chat_id: state.chatId,
@@ -369,6 +372,7 @@ async function send(text, fromVoice) {
           body.innerHTML = markdown(raw.replace(/<think>[\s\S]*?(<\/think>|$)/g, "").replace(/<tool_call>[\s\S]*?(<\/tool_call>|$)/g, ""));
           msg._raw = raw;
           if (speaker) speaker.feed(raw);
+          if (opts.onText) opts.onText(raw);
           const m = $("messages");
           if (m.scrollHeight - m.scrollTop - m.clientHeight < 120) m.scrollTop = m.scrollHeight;
         } else if (ev === "error") {
@@ -377,13 +381,15 @@ async function send(text, fromVoice) {
       }
     }
   } catch (err) {
-    body.append(el("p", { class: "err" }, "⚠ " + err.message));
+    if (err.name === "AbortError") body.append(el("p", { class: "muted small" }, "(interrupted)"));
+    else body.append(el("p", { class: "err" }, "⚠ " + err.message));
   } finally {
     body.classList.remove("typing");
     state.busy = false;
     updateComposer();
     // Hands-free: after the reply has been spoken, listen for the next turn.
-    if (speaker) speaker.end(raw, () => { if (fromVoice && voicePrefs.handsfree && raw) listen(true); });
+    if (speaker && !opts.speaker) speaker.end(raw, () => { if (opts.fromVoice && voicePrefs.handsfree && raw) listen(true); });
+    if (opts.onDone) opts.onDone(raw);
   }
 }
 
@@ -1058,21 +1064,34 @@ const poll = setInterval(refreshStatus, 3000);
   else { await loadAgents(); newChat(); $("tabs").classList.remove("hidden"); show("chat"); }
 })();
 
+
 // ---- Voice ----
 // Talk-to-text: the microphone is recorded here, converted to 16 kHz WAV and
 // transcribed by the speech model on the drive (POST /api/transcribe).
-// Replies are read aloud with the computer's own voices; only on-device
-// voices are offered, so no audio or text goes to a cloud speech service.
+// Replies are read aloud with natural voices (the Kokoro model on the drive,
+// run in a background worker) or with the computer's own on-device voices.
+// No audio or text goes to a cloud speech service.
 
 const voicePrefs = {
   get voice() { return prefs.get("voice", ""); },
   get rate() { return parseFloat(prefs.get("voice-rate", "1")) || 1; },
   get speak() { return prefs.get("speak-replies", "0") === "1"; },
   get handsfree() { return prefs.get("voice-handsfree", "1") === "1"; },
+  get engine() { return prefs.get("voice-engine", "auto"); },
 };
 const synth = window.speechSynthesis;
 
-function localVoices() {
+// Kokoro voice ids are like "am_michael": a = US, b = UK; f/m = female/male.
+const KOKORO_BEST = ["af_heart", "af_bella", "af_nicole", "am_michael", "am_fenrir", "am_puck", "bf_emma", "bm_george", "bm_fable"];
+const naturalVoices = () => ((state.status && state.status.voices) || []).slice()
+  .sort((a, b) => ((KOKORO_BEST.indexOf(a) + 1 || 99) - (KOKORO_BEST.indexOf(b) + 1 || 99)) || a.localeCompare(b));
+function naturalLabel(id) {
+  const who = { af: "US woman", am: "US man", bf: "UK woman", bm: "UK man" }[id.slice(0, 2)] || "";
+  const name = id.slice(3);
+  return `${name[0].toUpperCase()}${name.slice(1)} (${who})${KOKORO_BEST.includes(id) ? " ★" : ""}`;
+}
+
+function systemVoices() {
   if (!synth) return [];
   const lang = (navigator.language || "en").slice(0, 2);
   return synth.getVoices().filter((v) => v.localService)
@@ -1080,19 +1099,28 @@ function localVoices() {
       (/premium|enhanced/i.test(b.name) - /premium|enhanced/i.test(a.name)) || a.name.localeCompare(b.name));
 }
 
-function pickVoice(name) {
-  const vs = localVoices();
-  const lang = (navigator.language || "en").slice(0, 2);
-  return vs.find((v) => v.name === name) || vs.find((v) => v.name === voicePrefs.voice) ||
-    vs.find((v) => v.default && v.lang.startsWith(lang)) || vs.find((v) => v.lang.startsWith(lang)) || vs[0] || null;
+// A voice setting is "kokoro:<id>" for a natural voice, or a system voice
+// name. Empty means the default: the best natural voice when available.
+function resolveVoice(v) {
+  v = v || voicePrefs.voice;
+  const nat = naturalVoices();
+  if (v.startsWith("kokoro:") && nat.includes(v.slice(7))) return v;
+  if (v && !v.startsWith("kokoro:") && systemVoices().some((s) => s.name === v)) return v;
+  if (nat.length) return "kokoro:" + nat[0];
+  return "";
 }
+const agentVoice = (ag) => resolveVoice(ag && ag.voice);
 
 function fillVoices(sel, current, firstLabel) {
-  const vs = localVoices();
-  const opts = [el("option", { value: "" }, firstLabel)];
-  for (const v of vs) opts.push(el("option", { value: v.name }, `${v.name} (${v.lang})`));
-  if (current && !vs.some((v) => v.name === current)) opts.push(el("option", { value: current }, `${current} (not on this computer)`));
-  sel.replaceChildren(...opts);
+  const nat = naturalVoices(), sys = systemVoices();
+  const groups = [el("option", { value: "" }, firstLabel)];
+  if (nat.length) groups.push(el("optgroup", { label: "Natural voices (on this drive)" },
+    ...nat.map((id) => el("option", { value: "kokoro:" + id }, naturalLabel(id)))));
+  if (sys.length) groups.push(el("optgroup", { label: "This computer's voices" },
+    ...sys.map((v) => el("option", { value: v.name }, `${v.name} (${v.lang})`))));
+  const known = !current || (current.startsWith("kokoro:") ? nat.includes(current.slice(7)) : sys.some((v) => v.name === current));
+  if (!known) groups.push(el("option", { value: current }, `${current} (not available here)`));
+  sel.replaceChildren(...groups);
   sel.value = current;
 }
 
@@ -1129,64 +1157,207 @@ function sentenceEnd(t) {
   return 0;
 }
 
-// makeSpeaker reads a streaming reply aloud sentence by sentence, so it
-// starts talking long before the reply is finished.
+// ---- Natural voices (Kokoro, in a worker) ----
+
+const kokoro = { worker: null, ready: null, info: null, error: "", seq: 0, waiting: new Map() };
+
+function kokoroCall(type, data, transfer) {
+  const id = ++kokoro.seq;
+  return new Promise((resolve, reject) => {
+    kokoro.waiting.set(id, { resolve, reject });
+    kokoro.worker.postMessage({ id, type, ...data }, transfer || []);
+  });
+}
+
+function kokoroLoad() {
+  if (!kokoro.ready) {
+    kokoro.worker = new Worker("kokoro/tts-worker.js", { type: "module" });
+    kokoro.worker.onmessage = ({ data }) => {
+      const w = kokoro.waiting.get(data.id);
+      if (!w) return;
+      kokoro.waiting.delete(data.id);
+      if (data.ok) w.resolve(data); else w.reject(new Error(data.error));
+    };
+    kokoro.worker.onerror = (e) => {
+      for (const w of kokoro.waiting.values()) w.reject(new Error(e.message || "voice engine crashed"));
+      kokoro.waiting.clear();
+    };
+    kokoro.ready = kokoroCall("load", { engine: voicePrefs.engine }).then((info) => {
+      kokoro.info = info;
+      kokoro.error = "";
+      renderVoiceEngine();
+      return info;
+    }, (err) => {
+      kokoro.error = err.message;
+      kokoro.ready = null;
+      kokoro.worker.terminate();
+      renderVoiceEngine();
+      throw err;
+    });
+    renderVoiceEngine();
+  }
+  return kokoro.ready;
+}
+
+function renderVoiceEngine() {
+  const box = $("voice-engine-status");
+  if (!box) return;
+  if (!naturalVoices().length) { box.textContent = "Natural voices are not on this drive yet (run the update)."; return; }
+  if (kokoro.error) { box.textContent = "Natural voices failed to start: " + kokoro.error + ". This computer's voices are used instead."; return; }
+  if (!kokoro.info) { box.textContent = kokoro.ready ? "Warming up natural voices…" : "Natural voices start the first time they speak."; return; }
+  const where = kokoro.info.device === "webgpu" ? "the graphics chip" : "the processor";
+  const x = kokoro.info.speed;
+  box.textContent = `Natural voices run on ${where}, ${x >= 1 ? x.toFixed(1) + "× faster than real time" : "slower than real time: replies may pause between sentences"}.`;
+}
+
+let audioCtx = null;
+function getAudioCtx() {
+  audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === "suspended") audioCtx.resume();
+  return audioCtx;
+}
+
+// ---- Speakers: read a streaming reply aloud, sentence by sentence ----
+// All speakers have feed(raw), end(raw, onDone), stop(), and call onStart
+// when sound begins. level() is the output loudness (0..1) when known.
+
 let activeSpeaker = null;
-function makeSpeaker(voiceName) {
-  if (!synth || !localVoices().length) return null;
+function makeSpeaker(voice, hooks = {}) {
+  voice = resolveVoice(voice);
   if (activeSpeaker) activeSpeaker.stop();
-  const voice = pickVoice(voiceName);
-  let done = 0, pending = 0, ended = false, stopped = false, onIdle = null;
-  const idle = () => { if (ended && !pending && onIdle) { const f = onIdle; onIdle = null; f(); } };
-  const say = (text) => {
-    const t = speechText(text);
-    if (!t || stopped) return;
-    const u = new SpeechSynthesisUtterance(t);
-    if (voice) { u.voice = voice; u.lang = voice.lang; }
-    u.rate = voicePrefs.rate;
-    pending++;
-    u.onend = u.onerror = () => { pending--; idle(); };
-    synth.speak(u);
-  };
+  let sp = null;
+  if (voice.startsWith("kokoro:")) sp = naturalSpeaker(voice.slice(7), hooks);
+  else if (synth && systemVoices().length) sp = systemSpeaker(voice, hooks);
+  activeSpeaker = sp;
+  return sp;
+}
+
+function speakerBase(say, hooks) {
+  let done = 0, ended = false, stopped = false, onIdle = null;
   const sp = {
+    busy: () => false,
     feed(raw) {
       let cut;
       while (!stopped && (cut = sentenceEnd(raw.slice(done)))) { say(raw.slice(done, done + cut)); done += cut; }
     },
     end(raw, cb) {
       if (!stopped) say(raw.slice(done));
-      done = raw.length; ended = true; onIdle = stopped ? null : cb; idle();
+      done = raw.length; ended = true; onIdle = stopped ? null : cb; sp.check();
     },
-    stop() { stopped = true; onIdle = null; synth.cancel(); if (activeSpeaker === sp) activeSpeaker = null; },
+    check() { if (ended && !sp.busy() && onIdle) { const f = onIdle; onIdle = null; f(); } },
+    stopped: () => stopped,
+    stop() { stopped = true; onIdle = null; sp.halt(); if (activeSpeaker === sp) activeSpeaker = null; },
+    level: () => 0,
   };
-  activeSpeaker = sp;
+  return sp;
+}
+
+function systemSpeaker(name, hooks) {
+  const v = systemVoices().find((x) => x.name === name) || systemVoices().find((x) => x.default) || systemVoices()[0];
+  let pending = 0, started = false;
+  const sp = speakerBase((text) => {
+    const t = speechText(text);
+    if (!t || sp.stopped()) return;
+    const u = new SpeechSynthesisUtterance(t);
+    if (v) { u.voice = v; u.lang = v.lang; }
+    u.rate = voicePrefs.rate;
+    pending++;
+    u.onstart = () => { if (!started) { started = true; hooks.onStart && hooks.onStart(); } };
+    u.onend = u.onerror = () => { pending--; sp.check(); };
+    synth.speak(u);
+  }, hooks);
+  sp.busy = () => pending > 0;
+  sp.halt = () => synth.cancel();
+  return sp;
+}
+
+function naturalSpeaker(voiceId, hooks) {
+  const queue = [];
+  let making = false, playing = 0, playEnd = 0, started = false, fallback = null;
+  const sources = new Set();
+  const ctx = getAudioCtx();
+  const out = ctx.createAnalyser();
+  out.fftSize = 512;
+  out.connect(ctx.destination);
+  const buf = new Float32Array(out.fftSize);
+  const play = (audio, rate) => {
+    const b = ctx.createBuffer(1, audio.length, rate);
+    b.copyToChannel(audio, 0);
+    const src = ctx.createBufferSource();
+    src.buffer = b;
+    src.connect(out);
+    const at = Math.max(ctx.currentTime + 0.05, playEnd);
+    playEnd = at + b.duration;
+    playing++;
+    sources.add(src);
+    src.onended = () => { playing--; sources.delete(src); sp.check(); };
+    src.start(at);
+    if (!started) { started = true; setTimeout(() => !sp.stopped() && hooks.onStart && hooks.onStart(), Math.max(0, (at - ctx.currentTime) * 1000)); }
+  };
+  const pump = async () => {
+    if (making || sp.stopped() || !queue.length) { sp.check(); return; }
+    making = true;
+    const text = queue.shift();
+    try {
+      await kokoroLoad();
+      if (sp.stopped()) return;
+      const { audio, rate } = await kokoroCall("speak", { text, voice: voiceId, speed: voicePrefs.rate });
+      if (!sp.stopped()) play(audio, rate);
+    } catch {
+      // Natural voices unavailable: finish with the computer's voice.
+      if (!fallback && synth && systemVoices().length) fallback = systemSpeaker("", hooks);
+      if (fallback && !sp.stopped()) { fallback.feed(text + "\n"); }
+    } finally {
+      making = false;
+      pump();
+    }
+  };
+  const sp = speakerBase((text) => {
+    const t = speechText(text);
+    if (t) { queue.push(t); pump(); }
+  }, hooks);
+  sp.busy = () => making || playing > 0 || queue.length > 0 || (fallback ? fallback.busy() : false);
+  sp.halt = () => {
+    queue.length = 0;
+    for (const s of sources) { try { s.stop(); } catch {} }
+    sources.clear();
+    if (fallback) fallback.stop();
+  };
+  sp.level = () => {
+    out.getFloatTimeDomainData(buf);
+    let s = 0;
+    for (let i = 0; i < buf.length; i++) s += buf[i] * buf[i];
+    return Math.min(1, Math.sqrt(s / buf.length) * 4);
+  };
   return sp;
 }
 
 function readAloud(text, agentLabel) {
   const ag = state.agents.find((a) => agentLabel && agentLabel === `${a.emoji} ${a.name}`) || currentAgent();
-  const sp = makeSpeaker(ag && ag.voice);
-  if (!sp) { addMessage("assistant", "⚠ This browser has no on-device voices to read with."); return; }
+  const sp = makeSpeaker(agentVoice(ag));
+  if (!sp) { addMessage("assistant", "⚠ No voices are available to read with."); return; }
   sp.end(text, null);
 }
 
-function testVoice(name) {
-  const sp = makeSpeaker(name);
-  if (sp) sp.end("Hi! This is how I sound. Everything I say is spoken right here on this computer.", null);
+function testVoice(v) {
+  const sp = makeSpeaker(v);
+  if (sp) sp.end("Hi! This is how I sound. Everything I say is made right here on this computer.", null);
 }
 
-// Safari only lets a page speak after a click; prime speech on one.
-function primeSpeech() {
-  if (synth && !primeSpeech.done) { synth.speak(new SpeechSynthesisUtterance("")); primeSpeech.done = true; }
+// Safari only lets a page make sound after a click; unlock audio on one.
+function primeAudio() {
+  getAudioCtx();
+  if (synth && !primeAudio.done) { synth.speak(new SpeechSynthesisUtterance("")); primeAudio.done = true; }
 }
 
 function renderVoiceSettings() {
-  fillVoices($("voice-default"), voicePrefs.voice, "This computer's default voice");
+  fillVoices($("voice-default"), voicePrefs.voice, "Automatic (best available)");
+  $("voice-engine").value = voicePrefs.engine;
   $("voice-rate").value = voicePrefs.rate;
   $("voice-rate-out").textContent = voicePrefs.rate.toFixed(1) + "×";
   $("voice-handsfree").checked = voicePrefs.handsfree;
-  if (!localVoices().length) $("voice-test").disabled = true;
   renderSpeechStatus();
+  renderVoiceEngine();
 }
 
 function renderSpeechStatus() {
@@ -1201,15 +1372,22 @@ if (synth) synth.addEventListener("voiceschanged", () => {
   if (state.view === "settings") renderVoiceSettings();
   if (!$("agent-form-wrap").classList.contains("hidden")) fillVoices($("agent-voice"), $("agent-voice").value, "Default voice (Settings)");
 });
-$("voice-default").addEventListener("change", (e) => { prefs.set("voice", e.target.value); testVoice(e.target.value); });
-$("voice-test").addEventListener("click", () => { primeSpeech(); testVoice($("voice-default").value); });
-$("agent-voice-test").addEventListener("click", () => { primeSpeech(); testVoice($("agent-voice").value); });
+$("voice-default").addEventListener("change", (e) => { prefs.set("voice", e.target.value); primeAudio(); testVoice(e.target.value); });
+$("voice-test").addEventListener("click", () => { primeAudio(); testVoice($("voice-default").value); });
+$("agent-voice-test").addEventListener("click", () => { primeAudio(); testVoice($("agent-voice").value); });
+$("voice-engine").addEventListener("change", (e) => {
+  prefs.set("voice-engine", e.target.value);
+  if (kokoro.worker) kokoro.worker.terminate();
+  Object.assign(kokoro, { worker: null, ready: null, info: null, error: "" });
+  renderVoiceEngine();
+});
 $("voice-rate").addEventListener("input", (e) => { prefs.set("voice-rate", e.target.value); $("voice-rate-out").textContent = parseFloat(e.target.value).toFixed(1) + "×"; });
 $("voice-handsfree").addEventListener("change", (e) => prefs.set("voice-handsfree", e.target.checked ? "1" : "0"));
 $("speak-replies").checked = voicePrefs.speak;
 $("speak-replies").addEventListener("change", (e) => {
   prefs.set("speak-replies", e.target.checked ? "1" : "0");
-  if (e.target.checked) primeSpeech(); else if (activeSpeaker) activeSpeaker.stop();
+  if (e.target.checked) { primeAudio(); if (resolveVoice("").startsWith("kokoro:")) kokoroLoad().catch(() => {}); }
+  else if (activeSpeaker) activeSpeaker.stop();
 });
 const settingsTab = document.querySelector('.tabs button[data-view="settings"]');
 if (settingsTab) settingsTab.addEventListener("click", renderVoiceSettings);
@@ -1217,17 +1395,47 @@ if (settingsTab) settingsTab.addEventListener("click", renderVoiceSettings);
 // ---- Microphone ----
 
 const SPEECH_RATE = 16000;
-let mic = null; // the recording in progress
-let audioCtx = null;
+
+// openMic streams microphone chunks to onChunk(samples, rms) until closed.
+async function openMic(onChunk) {
+  const ctx = getAudioCtx();
+  await ctx.resume();
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+  const src = ctx.createMediaStreamSource(stream);
+  const proc = ctx.createScriptProcessor(2048, 1, 1);
+  const mute = ctx.createGain();
+  mute.gain.value = 0;
+  proc.onaudioprocess = (e) => {
+    const d = new Float32Array(e.inputBuffer.getChannelData(0));
+    let s = 0;
+    for (let i = 0; i < d.length; i++) s += d[i] * d[i];
+    onChunk(d, Math.sqrt(s / d.length));
+  };
+  src.connect(proc);
+  proc.connect(mute);
+  mute.connect(ctx.destination);
+  return {
+    rate: ctx.sampleRate,
+    seconds: (n) => n * 2048 / ctx.sampleRate,
+    close() { proc.onaudioprocess = null; proc.disconnect(); src.disconnect(); mute.disconnect(); stream.getTracks().forEach((t) => t.stop()); },
+  };
+}
+
+function micError(err) {
+  return err.name === "NotAllowedError"
+    ? "allow microphone access for this page in your browser (Safari: Settings → Websites → Microphone)" : err.message;
+}
+
+let mic = null; // the 🎤 recording in progress
 
 function renderMic() {
   const st = state.status || {};
-  const b = $("mic");
   const ok = st.speech_state === "ready";
-  b.classList.toggle("off", !ok && !mic);
-  b.title = mic ? "Stop and send" : ok ? "Talk instead of typing" :
+  for (const b of [$("mic"), $("call-btn")]) b.classList.toggle("off", !ok && !mic && !call);
+  $("mic").title = mic ? "Stop and send" : ok ? "Talk instead of typing" :
     st.speech_state === "starting" ? "The voice model is loading…" :
     st.speech_state === "no_model" ? "No speech model on this drive yet" : "The voice model is not running";
+  $("call-btn").title = ok ? "Live voice call" : $("mic").title;
 }
 
 function micState(s) {
@@ -1239,76 +1447,65 @@ function micState(s) {
   renderMic();
 }
 
-async function listen(auto) {
-  if (mic) { mic.finish(); return; }
+function voiceReady(auto) {
   const st = state.status || {};
   if (st.speech_state !== "ready") {
     if (!auto) addMessage("assistant", "⚠ Voice input isn't available: " + $("mic").title.toLowerCase() + ".");
-    return;
+    return false;
   }
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    addMessage("assistant", "⚠ This browser can't use the microphone here.");
-    return;
+    if (!auto) addMessage("assistant", "⚠ This browser can't use the microphone here.");
+    return false;
   }
+  return true;
+}
+
+async function listen(auto) {
+  if (mic) { mic.finish(); return; }
+  if (call || !voiceReady(auto)) return;
   if (activeSpeaker) activeSpeaker.stop();
-  let stream;
+  const chunks = [];
+  let floor = 1, heard = false, quietSince = 0, t = 0, closed = false, m;
+  const close = () => { if (closed) return false; closed = true; m.close(); mic = null; return true; };
   try {
-    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
-    await audioCtx.resume();
-    stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
+    m = await openMic((d, rms) => {
+      if (closed) return;
+      chunks.push(d);
+      t = m.seconds(chunks.length) * 1000;
+      $("mic").style.setProperty("--level", Math.min(1, rms * 12).toFixed(2));
+      // The quietest moment of the first 300 ms is the room's background
+      // noise (the minimum, so talking right away doesn't raise it).
+      if (t < 300) { floor = Math.min(floor, rms); return; }
+      if (rms > Math.max(0.012, Math.min(floor, 0.02) * 3)) { heard = true; quietSince = 0; }
+      else if (heard) { quietSince = quietSince || t; if (t - quietSince > 1500) mic.finish(); }
+      if (!heard && t > (auto ? 8000 : 12000)) mic.cancel(); // nobody spoke
+      if (t > 120000) mic.finish();
+    });
   } catch (err) {
-    if (!auto) addMessage("assistant", "⚠ Microphone not available: " + (err.name === "NotAllowedError"
-      ? "allow microphone access for this page in your browser (Safari: Settings → Websites → Microphone)." : err.message));
+    if (!auto) addMessage("assistant", "⚠ Microphone not available: " + micError(err) + ".");
     return;
   }
-  const src = audioCtx.createMediaStreamSource(stream);
-  const proc = audioCtx.createScriptProcessor(4096, 1, 1);
-  const chunks = [];
-  const t0 = performance.now();
-  let floor = 1, heard = false, quietSince = 0, closed = false;
-  const close = () => {
-    if (closed) return false;
-    closed = true;
-    proc.disconnect(); src.disconnect();
-    stream.getTracks().forEach((t) => t.stop());
-    mic = null;
-    return true;
-  };
   mic = {
-    finish() { if (close()) transcribe(chunks, audioCtx.sampleRate, auto, heard); },
+    finish() { if (close()) transcribeTurn(chunks, m.rate, auto, heard); },
     cancel() { if (close()) micState("idle"); },
   };
-  proc.onaudioprocess = (e) => {
-    if (closed) return;
-    const d = e.inputBuffer.getChannelData(0);
-    chunks.push(new Float32Array(d));
-    let sum = 0;
-    for (let i = 0; i < d.length; i++) sum += d[i] * d[i];
-    const rms = Math.sqrt(sum / d.length);
-    const now = performance.now() - t0;
-    $("mic").style.setProperty("--level", Math.min(1, rms * 12).toFixed(2));
-    // The quietest moment of the first 300 ms is the room's background
-    // noise (the minimum, so talking right away doesn't raise it).
-    if (now < 300) { floor = Math.min(floor, rms); return; }
-    if (rms > Math.max(0.012, Math.min(floor, 0.02) * 3)) { heard = true; quietSince = 0; }
-    else if (heard) { quietSince = quietSince || now; if (now - quietSince > 1500) mic.finish(); }
-    if (!heard && now > (auto ? 8000 : 12000)) mic.cancel(); // nobody spoke
-    if (now > 120000) mic.finish();
-  };
-  src.connect(proc);
-  proc.connect(audioCtx.destination);
   micState("recording");
 }
 
-async function transcribe(chunks, rate, auto, heard) {
+async function transcribeChunks(chunks, rate) {
+  const wav = encodeWAV(downsample(chunks, rate, SPEECH_RATE), SPEECH_RATE);
+  const { text } = await api("POST", "/api/transcribe", { audio: toBase64(wav) });
+  return text;
+}
+
+async function transcribeTurn(chunks, rate, auto, heard) {
   if (!heard) { micState("idle"); return; }
   micState("working");
   try {
-    const wav = encodeWAV(downsample(chunks, rate, SPEECH_RATE), SPEECH_RATE);
-    const { text } = await api("POST", "/api/transcribe", { audio: toBase64(wav) });
+    const text = await transcribeChunks(chunks, rate);
     if (!text) { if (!auto) addMessage("assistant", "🎤 I didn't catch that — try again a little closer to the mic."); return; }
     if (voicePrefs.handsfree && modelReady() && !state.busy && !$("input").value.trim()) {
-      send(text, true);
+      send(text, { fromVoice: true });
     } else {
       const box = $("input");
       box.value = (box.value.trim() ? box.value.trimEnd() + " " : "") + text;
@@ -1360,4 +1557,158 @@ function toBase64(bytes) {
   return btoa(s);
 }
 
-$("mic").addEventListener("click", () => { primeSpeech(); listen(false); });
+$("mic").addEventListener("click", () => { primeAudio(); listen(false); });
+
+// ---- Live voice call ----
+// The mic stays open for the whole call. Each pause ends your turn: it is
+// transcribed and sent, and the reply is spoken as it is written. Speaking
+// while the agent talks (or thinks) interrupts it and starts your next turn.
+
+let call = null;
+
+const CALL_PAUSE_MS = 1000; // silence that ends your turn
+const CALL_BARGE_MS = 250; // speech that interrupts the agent
+
+function callSay(stateName, label) {
+  call.state = stateName;
+  $("call").dataset.state = stateName;
+  $("call-state").textContent = label;
+}
+
+async function startCall() {
+  if (call) return;
+  primeAudio();
+  if (!voiceReady(false)) return;
+  if (!modelReady()) { addMessage("assistant", "⚠ The AI model is still loading — try the call again in a moment."); return; }
+  if (activeSpeaker) activeSpeaker.stop();
+  const ag = currentAgent();
+  $("call-emoji").textContent = ag ? ag.emoji : "💬";
+  $("call-name").textContent = ag ? ag.name : (state.status && state.status.chat_model) || "Private AI";
+  $("call-you").textContent = "";
+  $("call-them").textContent = "";
+  $("call").classList.remove("hidden");
+  call = { state: "", muted: false, chunks: [], preroll: [], floor: 0.01, echo: 0, loud: 0, quiet: 0, t: 0, abort: null, speaker: null, turn: 0 };
+  callSay("connecting", "Connecting…");
+  renderMic();
+  const voice = agentVoice(ag);
+  if (voice.startsWith("kokoro:")) {
+    callSay("connecting", "Warming up the voice…");
+    try { await kokoroLoad(); } catch {}
+  }
+  if (!call) return;
+  try {
+    call.mic = await openMic(onCallAudio);
+  } catch (err) {
+    endCall();
+    addMessage("assistant", "⚠ Microphone not available: " + micError(err) + ".");
+    return;
+  }
+  callSay("listening", "Listening…");
+  call.anim = requestAnimationFrame(animateOrb);
+}
+
+function onCallAudio(d, rms) {
+  const c = call;
+  if (!c || c.muted || !c.mic) return;
+  const ms = c.mic.seconds(1) * 1000;
+  c.level = rms;
+  const agentTalking = c.state === "speaking" || c.state === "thinking";
+  // Background noise when nobody talks; the agent's own voice leaking
+  // into the mic while it speaks (echo cancellation removes most of it).
+  if (c.state === "listening" && rms < c.floor * 2) c.floor = Math.min(0.03, Math.max(0.002, c.floor * 0.95 + rms * 0.05));
+  if (c.state === "speaking") c.echo = c.echo * 0.9 + rms * 0.1;
+  const thr = Math.max(0.012, c.floor * 3, agentTalking ? c.echo * 2.5 : 0);
+  if (c.state === "hearing") {
+    c.chunks.push(d);
+    c.quiet = rms > thr ? 0 : c.quiet + ms;
+    if (c.quiet > CALL_PAUSE_MS || c.chunks.length * ms > 60000) endTurn();
+    return;
+  }
+  c.preroll.push(d);
+  if (c.preroll.length * ms > 400) c.preroll.shift();
+  c.loud = rms > thr ? c.loud + ms : 0;
+  const need = agentTalking ? CALL_BARGE_MS : 150;
+  if ((c.state === "listening" || agentTalking) && c.loud >= need) {
+    if (agentTalking) interruptAgent();
+    c.chunks = c.preroll.slice();
+    c.preroll = [];
+    c.quiet = 0;
+    callSay("hearing", "Listening…");
+  }
+}
+
+function interruptAgent() {
+  if (call.speaker) call.speaker.stop();
+  if (call.abort) call.abort.abort();
+  call.speaker = null;
+  call.abort = null;
+  call.turn++;
+}
+
+async function endTurn() {
+  const c = call;
+  const chunks = c.chunks;
+  c.chunks = [];
+  callSay("thinking", "Thinking…");
+  const turn = ++c.turn;
+  let text = "";
+  try {
+    text = await transcribeChunks(chunks, c.mic.rate);
+  } catch (err) {
+    if (call === c && c.turn === turn) { $("call-them").textContent = "⚠ " + err.message; callSay("listening", "Listening…"); }
+    return;
+  }
+  if (call !== c || c.turn !== turn) return; // interrupted or hung up meanwhile
+  if (!text) { callSay("listening", "Listening…"); return; }
+  $("call-you").textContent = text;
+  $("call-them").textContent = "";
+  // Wait for a turn that is still finishing (it was just interrupted).
+  for (let i = 0; state.busy && i < 100; i++) await new Promise((r) => setTimeout(r, 50));
+  if (call !== c || c.turn !== turn) return;
+  const ag = currentAgent();
+  c.abort = new AbortController();
+  c.speaker = makeSpeaker(agentVoice(ag), {
+    onStart: () => { if (call === c && c.turn === turn) { c.echo = c.floor; callSay("speaking", "Speaking… (talk to interrupt)"); } },
+  });
+  const speaker = c.speaker;
+  await send(text, {
+    speaker, signal: c.abort.signal,
+    onText: (raw) => { if (call === c && c.turn === turn) $("call-them").textContent = speechText(raw).slice(-280); },
+  });
+  if (call !== c || c.turn !== turn) return;
+  if (!speaker) { callSay("listening", "Listening…"); return; }
+  speaker.end(lastReply(), () => { if (call === c && c.turn === turn) callSay("listening", "Listening…"); });
+}
+
+const lastReply = () => { const m = [...document.querySelectorAll(".msg.assistant")].pop(); return (m && m._raw) || ""; };
+
+function animateOrb() {
+  if (!call) return;
+  const lvl = call.state === "speaking" && call.speaker ? call.speaker.level() || 0.25
+    : call.state === "hearing" ? Math.min(1, (call.level || 0) * 10) : 0;
+  $("call-orb").style.setProperty("--level", lvl.toFixed(2));
+  call.anim = requestAnimationFrame(animateOrb);
+}
+
+function endCall() {
+  const c = call;
+  if (!c) return;
+  call = null;
+  if (c.mic) c.mic.close();
+  if (c.speaker) c.speaker.stop();
+  if (c.abort) c.abort.abort();
+  cancelAnimationFrame(c.anim);
+  $("call").classList.add("hidden");
+  renderMic();
+}
+
+$("call-btn").addEventListener("click", startCall);
+$("call-end").addEventListener("click", endCall);
+$("call-mute").addEventListener("click", () => {
+  if (!call) return;
+  call.muted = !call.muted;
+  $("call-mute").textContent = call.muted ? "🎤 Unmute" : "🎤 Mute";
+  $("call").classList.toggle("muted", call.muted);
+  if (call.muted && call.state === "hearing") { call.chunks = []; callSay("listening", "Muted"); }
+});
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && call) endCall(); });

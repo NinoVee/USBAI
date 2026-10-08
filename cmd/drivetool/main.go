@@ -530,7 +530,7 @@ func fetchModels(drive string, only map[string]bool) error {
 		if only != nil && !only[m.ID] {
 			continue
 		}
-		if cfg.Check(m) == nil {
+		if cfg.CheckFile(m.File, m.Size) == nil {
 			fmt.Printf("%s: already present\n", m.ID)
 		} else if m.URL == "" {
 			fmt.Printf("%s: no url in config.json, skipping\n", m.ID)
@@ -554,6 +554,21 @@ func fetchModels(drive string, only map[string]bool) error {
 			fmt.Printf("%s: downloading %s\n", m.ID, part)
 			if err := download(m.MMProjURL, cfg.Path(m.MMProj), m.MMProjSHA256); err != nil {
 				return fmt.Errorf("%s mmproj: %w", m.ID, err)
+			}
+		}
+		for _, x := range m.Extra {
+			if cfg.CheckFile(x.File, x.Size) == nil || x.URL == "" {
+				continue
+			}
+			fmt.Printf("%s: downloading %s\n", m.ID, filepath.Base(x.File))
+			var err error
+			if x.Member != "" {
+				err = downloadMember(x.URL, x.Member, cfg.Path(x.File), x.SHA256)
+			} else {
+				err = download(x.URL, cfg.Path(x.File), x.SHA256)
+			}
+			if err != nil {
+				return fmt.Errorf("%s %s: %w", m.ID, x.File, err)
 			}
 		}
 	}
@@ -636,6 +651,52 @@ func downloadOnce(url, path, sha string) error {
 		}
 	}
 	return os.Rename(part, path)
+}
+
+// downloadMember fetches a .tgz archive and saves one file from it.
+func downloadMember(url, member, path, sha string) error {
+	tgz := path + ".tgz"
+	if err := download(url, tgz, ""); err != nil {
+		return err
+	}
+	defer os.Remove(tgz)
+	f, err := os.Open(tgz)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	zr, err := gzip.NewReader(f)
+	if err != nil {
+		return err
+	}
+	tr := tar.NewReader(zr)
+	for {
+		h, err := tr.Next()
+		if err == io.EOF {
+			return fmt.Errorf("%s not found in %s", member, url)
+		}
+		if err != nil {
+			return err
+		}
+		if h.Name != member {
+			continue
+		}
+		part := path + ".part"
+		out, err := os.Create(part)
+		if err != nil {
+			return err
+		}
+		_, err = io.Copy(out, io.LimitReader(tr, 1<<30))
+		out.Close()
+		if err == nil && sha != "" {
+			err = verify(part, sha)
+		}
+		if err != nil {
+			os.Remove(part)
+			return err
+		}
+		return os.Rename(part, path)
+	}
 }
 
 func verify(path, want string) error {
@@ -787,6 +848,9 @@ func verifyDrive(drive string) error {
 			continue // a personality: its files are the base model's
 		}
 		check(m.ID, m.File, m.Size, m.SHA256)
+		for _, x := range m.Extra {
+			check(m.ID+" "+filepath.Base(x.File), x.File, x.Size, x.SHA256)
+		}
 		if m.MMProj != "" {
 			check(m.ID+" (projector)", m.MMProj, m.MMProjSize, m.MMProjSHA256)
 		}
@@ -821,6 +885,13 @@ func check(drive string) error {
 			st, _ := os.Stat(cfg.Path(m.File))
 			mark = fmt.Sprintf("ok (%.1f GB)", float64(st.Size())/(1<<30))
 			if err := cfg.Check(m); err != nil {
+				mark = "INCOMPLETE: " + err.Error()
+			}
+		}
+		if m.Role == "voice" && len(m.Extra) > 0 {
+			if err := cfg.Check(m); err == nil {
+				mark += fmt.Sprintf(", speaks (%d files)", len(m.Extra)+1)
+			} else if cfg.Present(m) {
 				mark = "INCOMPLETE: " + err.Error()
 			}
 		}

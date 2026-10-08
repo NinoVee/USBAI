@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"regexp"
@@ -21,6 +22,10 @@ type ChatRequest struct {
 	UseDocs bool     `json:"use_docs"`
 	DocIDs  []string `json:"doc_ids"` // focus documents; empty means search all
 	Images  []string `json:"images"`  // data: URLs (screenshots, photos)
+
+	// ctx, when set, ends the turn early (the browser hung up, e.g. when
+	// the user interrupts a voice call). The partial reply is kept.
+	ctx context.Context
 }
 
 // ChatEvents receives streamed progress for one turn.
@@ -235,6 +240,10 @@ func (a *App) Chat(req ChatRequest, ev ChatEvents) error {
 		return ev.Token(d.Content)
 	}
 
+	turnCtx := a.ctx
+	if req.ctx != nil {
+		turnCtx = req.ctx
+	}
 	var err error
 	done := map[string]string{} // tool+args -> result, to catch repeat calls
 	repeated := false
@@ -251,7 +260,7 @@ func (a *App) Chat(req ChatRequest, ev ChatEvents) error {
 		}
 		before := answer.Len()
 		var calls []llama.ToolCall
-		calls, err = llama.ChatStream(a.ctx, url, msgs, opts, onDelta)
+		calls, err = llama.ChatStream(turnCtx, url, msgs, opts, onDelta)
 		if err != nil || len(calls) == 0 {
 			break
 		}

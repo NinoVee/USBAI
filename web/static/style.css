@@ -399,3 +399,23 @@ input[type=range] { padding: 0; }
 .swatch.classic { background: #f6f7fb; color: #4b5cf0; font-family: system-ui, sans-serif; }
 :root[data-theme="terminal"] .wake { color: var(--text); text-shadow: none; }
 :root[data-theme="claude"] .wake { color: var(--text); }
+
+/* Live voice call */
+.call { position: fixed; inset: 0; z-index: 20; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 14px; padding: 24px 16px; background: color-mix(in srgb, var(--bg) 94%, transparent); backdrop-filter: blur(6px); text-align: center; }
+.call-who { font-size: 20px; font-weight: 600; }
+.orb-wrap { width: 220px; height: 220px; display: flex; align-items: center; justify-content: center; }
+.orb { --level: 0; width: 130px; height: 130px; border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, color-mix(in srgb, var(--accent) 55%, #fff), var(--accent) 60%, color-mix(in srgb, var(--accent) 60%, #000));
+  box-shadow: 0 0 calc(20px + var(--level) * 60px) color-mix(in srgb, var(--accent) 60%, transparent);
+  transform: scale(calc(1 + var(--level) * .45)); transition: transform .08s linear, box-shadow .08s linear; }
+.call[data-state="thinking"] .orb, .call[data-state="connecting"] .orb { animation: orb-breathe 1.4s ease-in-out infinite; }
+.call[data-state="listening"] .orb { opacity: .75; }
+.call.muted .orb { filter: grayscale(1); opacity: .4; }
+@keyframes orb-breathe { 50% { transform: scale(.88); opacity: .6; } }
+.call-state { font-size: 16px; color: var(--muted); min-height: 1.4em; }
+.call-caption { max-width: 640px; width: 100%; min-height: 1.4em; overflow-wrap: anywhere; }
+.call-caption.you { color: var(--muted); font-style: italic; }
+.call-caption.you:not(:empty)::before { content: "You: "; font-style: normal; }
+.call-actions { display: flex; gap: 12px; }
+.call-actions button { min-width: 120px; padding: 12px 18px; }

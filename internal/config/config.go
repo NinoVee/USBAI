@@ -33,6 +33,9 @@ type Model struct {
 	MMProjURL    string `json:"mmproj_url,omitempty"`
 	MMProjSize   int64  `json:"mmproj_size,omitempty"`
 	MMProjSHA256 string `json:"mmproj_sha256,omitempty"`
+	// Extra lists further files the model needs (e.g. the voices of a
+	// speech-synthesis model).
+	Extra []ExtraFile `json:"extra,omitempty"`
 	// Base makes this entry a personality of another model: it uses the
 	// base model's files, and Persona is added to the system prompt.
 	Base    string `json:"base,omitempty"`
@@ -67,6 +70,16 @@ func Default() Config {
 			"When document excerpts are provided, base your answer on them and cite the document name; " +
 			"if they do not contain the answer, say so.",
 	}
+}
+
+// ExtraFile is one more file of a model. Member, when set, is the path of
+// the file inside the .tgz archive at URL.
+type ExtraFile struct {
+	File   string `json:"file"`
+	URL    string `json:"url,omitempty"`
+	Member string `json:"member,omitempty"`
+	Size   int64  `json:"size,omitempty"`
+	SHA256 string `json:"sha256,omitempty"`
 }
 
 // Load reads config.json from root.
@@ -159,7 +172,20 @@ func (c Config) Vision(m Model) bool {
 // Check reports why a model's file can't be used: missing, or a different
 // size than expected (usually a copy to the drive that was cut short).
 func (c Config) Check(m Model) error {
-	return checkFile(c.Path(m.File), m.Size)
+	if err := checkFile(c.Path(m.File), m.Size); err != nil {
+		return err
+	}
+	for _, x := range m.Extra {
+		if err := checkFile(c.Path(x.File), x.Size); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// CheckFile reports why one drive-relative file can't be used.
+func (c Config) CheckFile(rel string, size int64) error {
+	return checkFile(c.Path(rel), size)
 }
 
 func checkFile(path string, want int64) error {

@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -103,6 +104,7 @@ func (a *App) Handler(ui fs.FS, port int) http.Handler {
 		respond(w)(a.Documents())
 	})
 	mux.HandleFunc("POST /api/docs", a.handleUpload)
+	mux.HandleFunc("GET /tts/{path...}", a.handleVoiceFile)
 	mux.HandleFunc("POST /api/transcribe", func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			Audio string `json:"audio"` // base64 WAV
@@ -256,6 +258,10 @@ func guard(next http.Handler, port int) http.Handler {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Referrer-Policy", "no-referrer")
+		// Cross-origin isolation lets the voice engine use every CPU core
+		// (WebAssembly threads); this page loads nothing from elsewhere.
+		w.Header().Set("Cross-Origin-Opener-Policy", "same-origin")
+		w.Header().Set("Cross-Origin-Embedder-Policy", "require-corp")
 		w.Header().Set("Content-Security-Policy",
 			"default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'")
 		next.ServeHTTP(w, r)
@@ -290,6 +296,7 @@ func (a *App) handleStatus(w http.ResponseWriter, r *http.Request) {
 		"embed_model":       a.embedModel.Name,
 		"speech_state":      a.speechState,
 		"speech_model":      a.speechModel.Name,
+		"voices":            a.voiceIDs(),
 		"context_size":      a.chatModel.Context,
 		"active_model":      a.chatModel.ID,
 		"supported_ext":     rag.SupportedExtensions,
@@ -514,6 +521,11 @@ func (a *App) handleChat(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.WriteHeader(http.StatusOK)
 	ev := sseEvents{w: w, f: f}
+	// Stop generating as soon as the browser hangs up (or the app stops).
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
+	defer context.AfterFunc(a.ctx, cancel)()
+	req.ctx = ctx
 	if err := a.Chat(req, ev); err != nil {
 		ev.send("error", map[string]string{"error": err.Error()})
 		return

@@ -18,7 +18,7 @@ fi
 OUT=dist/PRIVATE-AI
 VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo dev)
 
-mkdir -p "$OUT/bin" "$OUT/runtime" "$OUT/models/chat" "$OUT/models/embed" "$OUT/models/specialist" "$OUT/models/speech" "$OUT/data"
+mkdir -p "$OUT/bin" "$OUT/runtime" "$OUT/models/chat" "$OUT/models/embed" "$OUT/models/specialist" "$OUT/models/speech" "$OUT/models/voice" "$OUT/data"
 
 for target in windows/amd64 windows/arm64 darwin/arm64 darwin/amd64 linux/amd64 linux/arm64; do
   os=${target%/*}; arch=${target#*/}
