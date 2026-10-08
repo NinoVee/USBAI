@@ -62,12 +62,14 @@
       <div id="focus" class="chips"></div>
       <form id="chat-form">
         <label class="button attach" title="Attach images or files">📎<input type="file" id="attach-input" multiple hidden></label>
+        <button type="button" class="mic" id="mic" title="Talk instead of typing" aria-label="Talk">🎤</button>
         <textarea id="input" rows="1" placeholder="Ask anything…" autocomplete="off"></textarea>
         <button type="submit" class="primary" id="send" aria-label="Send">➤</button>
       </form>
       <div class="composer-row">
         <select id="agent-select" title="Who are you talking to?" aria-label="Agent"><option value="">💬 Private AI</option></select>
         <label class="toggle"><input type="checkbox" id="use-docs" checked> Search my files</label>
+        <label class="toggle" title="Read replies aloud"><input type="checkbox" id="speak-replies"> 🔊 Speak replies</label>
         <button type="button" class="link" id="new-chat">New chat</button>
       </div>
     </div>
@@ -125,6 +127,9 @@
             <label class="radio"><input type="radio" name="knowledge" value="none"> None</label>
             <div id="agent-docs" class="checks hidden"></div>
           </fieldset>
+          <label class="field">Voice
+            <span class="voice-pick"><select id="agent-voice" aria-label="Agent voice"></select><button type="button" id="agent-voice-test">▶ Test</button></span>
+          </label>
           <label class="field">Creativity <output id="agent-temp-out"></output>
             <input type="range" id="agent-temp" min="0" max="1.2" step="0.1" value="0.6">
           </label>
@@ -194,6 +199,17 @@
         <span id="cache-status" class="muted"></span>
         <button id="cache-clear" class="danger">Remove cached models</button>
       </div>
+      <h3>Voice</h3>
+      <p class="muted">Press 🎤 to talk instead of typing. Your voice is turned into text by a speech model on this drive (<span id="speech-status">checking…</span>), and recordings are never saved. With 🔊 <em>Speak replies</em> on, answers are read aloud by this computer's built-in voices; each agent can have its own. Neither uses the internet.</p>
+      <div class="vision-row voice-pick">
+        <select id="voice-default" aria-label="Default voice"></select>
+        <button type="button" id="voice-test">▶ Test</button>
+      </div>
+      <label class="field">Speaking speed <output id="voice-rate-out"></output>
+        <input type="range" id="voice-rate" min="0.6" max="1.6" step="0.1" value="1">
+      </label>
+      <label class="toggle"><input type="checkbox" id="voice-handsfree" checked> Hands-free: send what I say right away, and after a reply is spoken, listen again</label>
+      <p class="muted small">Mac tip: nicer voices are free in System Settings → Accessibility → Spoken Content → System voice → Manage Voices (pick an “Enhanced” or “Premium” one), then reload this page.</p>
       <h3>This computer</h3>
       <dl id="host-info" class="facts"></dl>
       <h3>Appearance</h3>

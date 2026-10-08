@@ -24,9 +24,11 @@ type Agent struct {
 	DocIDs      []string `json:"doc_ids"`
 	Temperature float64  `json:"temperature"`
 	// SearchFirst makes the agent search the web before every answer.
-	SearchFirst bool      `json:"search_first"`
-	Created     time.Time `json:"created"`
-	Updated     time.Time `json:"updated"`
+	SearchFirst bool `json:"search_first"`
+	// Voice is the name of the computer voice that reads replies aloud.
+	Voice   string    `json:"voice,omitempty"`
+	Created time.Time `json:"created"`
+	Updated time.Time `json:"updated"`
 }
 
 // HasTool reports whether the agent may use the named tool.
@@ -153,6 +155,11 @@ func (a *App) SaveAgent(in Agent) (Agent, error) {
 		}
 	}
 	in.Tools = tools
+	if r := []rune(strings.TrimSpace(in.Voice)); len(r) > 100 {
+		in.Voice = string(r[:100])
+	} else {
+		in.Voice = string(r)
+	}
 	if !in.HasTool("web_search") {
 		in.SearchFirst = false
 	}

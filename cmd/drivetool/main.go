@@ -782,7 +782,7 @@ func verifyDrive(drive string) error {
 		}
 		check(m.ID, m.File, m.Size, m.SHA256)
 		if m.MMProj != "" {
-			check(m.ID+" (image projector)", m.MMProj, m.MMProjSize, m.MMProjSHA256)
+			check(m.ID+" (projector)", m.MMProj, m.MMProjSize, m.MMProjSHA256)
 		}
 	}
 	if bad > 0 {
@@ -818,7 +818,13 @@ func check(drive string) error {
 				mark = "INCOMPLETE: " + err.Error()
 			}
 		}
-		if m.MMProj != "" {
+		if m.MMProj != "" && m.Role == "speech" {
+			if cfg.Vision(m) {
+				mark += ", hears speech"
+			} else if cfg.Present(m) {
+				mark += ", audio encoder missing"
+			}
+		} else if m.MMProj != "" {
 			if cfg.Vision(m) {
 				mark += ", sees images"
 			} else if cfg.Present(m) {

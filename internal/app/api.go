@@ -1,6 +1,7 @@
 package app
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -102,6 +103,26 @@ func (a *App) Handler(ui fs.FS, port int) http.Handler {
 		respond(w)(a.Documents())
 	})
 	mux.HandleFunc("POST /api/docs", a.handleUpload)
+	mux.HandleFunc("POST /api/transcribe", func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Audio string `json:"audio"` // base64 WAV
+		}
+		if err := json.NewDecoder(io.LimitReader(r.Body, maxSpeechBytes*4/3+(1<<16))).Decode(&req); err != nil {
+			httpError(w, err)
+			return
+		}
+		wav, err := base64.StdEncoding.DecodeString(req.Audio)
+		if err != nil {
+			httpError(w, errors.New("audio is not valid base64"))
+			return
+		}
+		text, err := a.Transcribe(wav)
+		if err != nil {
+			httpError(w, err)
+			return
+		}
+		writeJSON(w, map[string]string{"text": text})
+	})
 	mux.HandleFunc("POST /api/ocr", func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			Image string `json:"image"`
@@ -267,6 +288,8 @@ func (a *App) handleStatus(w http.ResponseWriter, r *http.Request) {
 		"chat_runtime":      a.chatRuntime,
 		"embed_state":       a.embedState,
 		"embed_model":       a.embedModel.Name,
+		"speech_state":      a.speechState,
+		"speech_model":      a.speechModel.Name,
 		"context_size":      a.chatModel.Context,
 		"active_model":      a.chatModel.ID,
 		"supported_ext":     rag.SupportedExtensions,

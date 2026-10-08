@@ -108,6 +108,7 @@ async function refreshStatus() {
     }
     pill.title = st.chat_error || "";
     updateComposer();
+    renderMic();
     renderLoadTip(st);
     const warn = st.chat_state === "ready" && st.chat_warning && st.chat_warning !== state.dismissedWarn;
     $("engine-warn").classList.toggle("hidden", !warn);
@@ -298,7 +299,8 @@ function addMessage(role, content, sources, images, steps, agentName) {
     const src = sourcesEl(sources);
     if (src) msg.append(src);
     msg.append(el("div", { class: "msg-tools" },
-      el("button", { type: "button", onclick: () => navigator.clipboard && navigator.clipboard.writeText(msg._raw || content) }, "Copy")));
+      el("button", { type: "button", onclick: () => navigator.clipboard && navigator.clipboard.writeText(msg._raw || content) }, "Copy"),
+      el("button", { type: "button", title: "Read aloud", onclick: () => readAloud(msg._raw || content, agentName) }, "🔊")));
   }
   msg._raw = content;
   $("messages").append(msg);
@@ -306,7 +308,7 @@ function addMessage(role, content, sources, images, steps, agentName) {
   return msg;
 }
 
-async function send(text) {
+async function send(text, fromVoice) {
   const images = state.images.slice();
   if (state.busy || (!text.trim() && !images.length)) return;
   state.busy = true;
@@ -320,6 +322,7 @@ async function send(text) {
   const body = msg.querySelector(".body");
   body.classList.add("typing");
   let raw = "";
+  const speaker = voicePrefs.speak ? makeSpeaker(ag && ag.voice) : null;
   try {
     const res = await fetch("/api/chat", {
       method: "POST",
@@ -365,6 +368,7 @@ async function send(text) {
           raw += data.text;
           body.innerHTML = markdown(raw.replace(/<think>[\s\S]*?(<\/think>|$)/g, "").replace(/<tool_call>[\s\S]*?(<\/tool_call>|$)/g, ""));
           msg._raw = raw;
+          if (speaker) speaker.feed(raw);
           const m = $("messages");
           if (m.scrollHeight - m.scrollTop - m.clientHeight < 120) m.scrollTop = m.scrollHeight;
         } else if (ev === "error") {
@@ -378,6 +382,8 @@ async function send(text) {
     body.classList.remove("typing");
     state.busy = false;
     updateComposer();
+    // Hands-free: after the reply has been spoken, listen for the next turn.
+    if (speaker) speaker.end(raw, () => { if (fromVoice && voicePrefs.handsfree && raw) listen(true); });
   }
 }
 
@@ -798,6 +804,7 @@ async function editAgent(a) {
     el("label", {}, el("input", { type: "checkbox", value: t.id, ...((ag.tools || []).includes(t.id) ? { checked: "" } : {}) }),
       el("span", {}, t.label, el("small", {}, t.description)))));
   $("agent-search-first").checked = !!ag.search_first;
+  fillVoices($("agent-voice"), ag.voice || "", "Default voice (Settings)");
   syncSearchFirst();
   document.querySelectorAll("input[name=knowledge]").forEach((r) => { r.checked = r.value === (ag.knowledge || "all"); });
   const docs = (await api("GET", "/api/docs")) || [];
@@ -840,6 +847,7 @@ $("agent-form").addEventListener("submit", async (e) => {
     doc_ids: checked("#agent-docs"),
     temperature: parseFloat($("agent-temp").value),
     search_first: $("agent-search-first").checked,
+    voice: $("agent-voice").value,
   };
   try {
     await api("POST", "/api/agents", body);
@@ -896,6 +904,7 @@ async function renderChats() {
 function renderSettings() {
   const st = state.status;
   if (!st) return;
+  renderSpeechStatus();
   const models = $("model-list");
   models.replaceChildren();
   const ram = Math.floor(st.host.ram_bytes / 2 ** 30);
@@ -1048,3 +1057,305 @@ const poll = setInterval(refreshStatus, 3000);
   if (st.locked) showLock();
   else { await loadAgents(); newChat(); $("tabs").classList.remove("hidden"); show("chat"); }
 })();
+
+// ---- Voice ----
+// Talk-to-text: the microphone is recorded here, converted to 16 kHz WAV and
+// transcribed by the speech model on the drive (POST /api/transcribe).
+// Replies are read aloud with the computer's own voices; only on-device
+// voices are offered, so no audio or text goes to a cloud speech service.
+
+const voicePrefs = {
+  get voice() { return prefs.get("voice", ""); },
+  get rate() { return parseFloat(prefs.get("voice-rate", "1")) || 1; },
+  get speak() { return prefs.get("speak-replies", "0") === "1"; },
+  get handsfree() { return prefs.get("voice-handsfree", "1") === "1"; },
+};
+const synth = window.speechSynthesis;
+
+function localVoices() {
+  if (!synth) return [];
+  const lang = (navigator.language || "en").slice(0, 2);
+  return synth.getVoices().filter((v) => v.localService)
+    .sort((a, b) => (b.lang.startsWith(lang) - a.lang.startsWith(lang)) ||
+      (/premium|enhanced/i.test(b.name) - /premium|enhanced/i.test(a.name)) || a.name.localeCompare(b.name));
+}
+
+function pickVoice(name) {
+  const vs = localVoices();
+  const lang = (navigator.language || "en").slice(0, 2);
+  return vs.find((v) => v.name === name) || vs.find((v) => v.name === voicePrefs.voice) ||
+    vs.find((v) => v.default && v.lang.startsWith(lang)) || vs.find((v) => v.lang.startsWith(lang)) || vs[0] || null;
+}
+
+function fillVoices(sel, current, firstLabel) {
+  const vs = localVoices();
+  const opts = [el("option", { value: "" }, firstLabel)];
+  for (const v of vs) opts.push(el("option", { value: v.name }, `${v.name} (${v.lang})`));
+  if (current && !vs.some((v) => v.name === current)) opts.push(el("option", { value: current }, `${current} (not on this computer)`));
+  sel.replaceChildren(...opts);
+  sel.value = current;
+}
+
+// Text as it should sound: no Markdown symbols, code, links or emoji.
+function speechText(t) {
+  return t.replace(/<think>[\s\S]*?(<\/think>|$)/g, "").replace(/<tool_call>[\s\S]*?(<\/tool_call>|$)/g, "")
+    .replace(/```[\s\S]*?(```|$)/g, " The code is shown on screen. ")
+    .replace(/`([^`]*)`/g, "$1")
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, "")
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+    .replace(/https?:\/\/\S+/g, "a link")
+    .replace(/^\s*\|?\s*:?-{3,}[\s|:-]*$/gm, "")
+    .replace(/\|/g, ", ")
+    .replace(/^#{1,6}\s*/gm, "").replace(/^\s*>\s?/gm, "").replace(/^\s*[-*+•]\s+/gm, "")
+    .replace(/\*\*|__|~~|\*|(?<=\s|^)_|_(?=\s|$)/g, "")
+    .replace(/\p{Extended_Pictographic}️?/gu, "")
+    .replace(/\s+/g, " ").trim();
+}
+
+// Where the first complete, speakable sentence of t ends (0 if none yet).
+// Never inside an unfinished code block or <think> section.
+function sentenceEnd(t) {
+  const re = /[.!?…]+["'”’)\]]*(?=\s)|\n+/g;
+  let m;
+  while ((m = re.exec(t))) {
+    const end = m.index + m[0].length;
+    const head = t.slice(0, end);
+    if (/\d$/.test(t.slice(0, m.index)) && m[0][0] === ".") continue; // "1." in a list
+    if ((head.match(/```/g) || []).length % 2) continue;
+    if (/<think>(?![\s\S]*<\/think>)/.test(head)) continue;
+    if (speechText(head).length < 2) continue;
+    return end;
+  }
+  return 0;
+}
+
+// makeSpeaker reads a streaming reply aloud sentence by sentence, so it
+// starts talking long before the reply is finished.
+let activeSpeaker = null;
+function makeSpeaker(voiceName) {
+  if (!synth || !localVoices().length) return null;
+  if (activeSpeaker) activeSpeaker.stop();
+  const voice = pickVoice(voiceName);
+  let done = 0, pending = 0, ended = false, stopped = false, onIdle = null;
+  const idle = () => { if (ended && !pending && onIdle) { const f = onIdle; onIdle = null; f(); } };
+  const say = (text) => {
+    const t = speechText(text);
+    if (!t || stopped) return;
+    const u = new SpeechSynthesisUtterance(t);
+    if (voice) { u.voice = voice; u.lang = voice.lang; }
+    u.rate = voicePrefs.rate;
+    pending++;
+    u.onend = u.onerror = () => { pending--; idle(); };
+    synth.speak(u);
+  };
+  const sp = {
+    feed(raw) {
+      let cut;
+      while (!stopped && (cut = sentenceEnd(raw.slice(done)))) { say(raw.slice(done, done + cut)); done += cut; }
+    },
+    end(raw, cb) {
+      if (!stopped) say(raw.slice(done));
+      done = raw.length; ended = true; onIdle = stopped ? null : cb; idle();
+    },
+    stop() { stopped = true; onIdle = null; synth.cancel(); if (activeSpeaker === sp) activeSpeaker = null; },
+  };
+  activeSpeaker = sp;
+  return sp;
+}
+
+function readAloud(text, agentLabel) {
+  const ag = state.agents.find((a) => agentLabel && agentLabel === `${a.emoji} ${a.name}`) || currentAgent();
+  const sp = makeSpeaker(ag && ag.voice);
+  if (!sp) { addMessage("assistant", "⚠ This browser has no on-device voices to read with."); return; }
+  sp.end(text, null);
+}
+
+function testVoice(name) {
+  const sp = makeSpeaker(name);
+  if (sp) sp.end("Hi! This is how I sound. Everything I say is spoken right here on this computer.", null);
+}
+
+// Safari only lets a page speak after a click; prime speech on one.
+function primeSpeech() {
+  if (synth && !primeSpeech.done) { synth.speak(new SpeechSynthesisUtterance("")); primeSpeech.done = true; }
+}
+
+function renderVoiceSettings() {
+  fillVoices($("voice-default"), voicePrefs.voice, "This computer's default voice");
+  $("voice-rate").value = voicePrefs.rate;
+  $("voice-rate-out").textContent = voicePrefs.rate.toFixed(1) + "×";
+  $("voice-handsfree").checked = voicePrefs.handsfree;
+  if (!localVoices().length) $("voice-test").disabled = true;
+  renderSpeechStatus();
+}
+
+function renderSpeechStatus() {
+  const st = state.status || {};
+  $("speech-status").textContent = {
+    ready: `${st.speech_model}, ready`, starting: `${st.speech_model || "speech model"}, loading…`,
+    no_model: "not on this drive yet: run the update to download it", error: "it failed to start",
+  }[st.speech_state] || "checking…";
+}
+
+if (synth) synth.addEventListener("voiceschanged", () => {
+  if (state.view === "settings") renderVoiceSettings();
+  if (!$("agent-form-wrap").classList.contains("hidden")) fillVoices($("agent-voice"), $("agent-voice").value, "Default voice (Settings)");
+});
+$("voice-default").addEventListener("change", (e) => { prefs.set("voice", e.target.value); testVoice(e.target.value); });
+$("voice-test").addEventListener("click", () => { primeSpeech(); testVoice($("voice-default").value); });
+$("agent-voice-test").addEventListener("click", () => { primeSpeech(); testVoice($("agent-voice").value); });
+$("voice-rate").addEventListener("input", (e) => { prefs.set("voice-rate", e.target.value); $("voice-rate-out").textContent = parseFloat(e.target.value).toFixed(1) + "×"; });
+$("voice-handsfree").addEventListener("change", (e) => prefs.set("voice-handsfree", e.target.checked ? "1" : "0"));
+$("speak-replies").checked = voicePrefs.speak;
+$("speak-replies").addEventListener("change", (e) => {
+  prefs.set("speak-replies", e.target.checked ? "1" : "0");
+  if (e.target.checked) primeSpeech(); else if (activeSpeaker) activeSpeaker.stop();
+});
+const settingsTab = document.querySelector('.tabs button[data-view="settings"]');
+if (settingsTab) settingsTab.addEventListener("click", renderVoiceSettings);
+
+// ---- Microphone ----
+
+const SPEECH_RATE = 16000;
+let mic = null; // the recording in progress
+let audioCtx = null;
+
+function renderMic() {
+  const st = state.status || {};
+  const b = $("mic");
+  const ok = st.speech_state === "ready";
+  b.classList.toggle("off", !ok && !mic);
+  b.title = mic ? "Stop and send" : ok ? "Talk instead of typing" :
+    st.speech_state === "starting" ? "The voice model is loading…" :
+    st.speech_state === "no_model" ? "No speech model on this drive yet" : "The voice model is not running";
+}
+
+function micState(s) {
+  const b = $("mic");
+  b.classList.toggle("recording", s === "recording");
+  b.classList.toggle("working", s === "working");
+  b.textContent = s === "working" ? "…" : "🎤";
+  if (s !== "recording") b.style.removeProperty("--level");
+  renderMic();
+}
+
+async function listen(auto) {
+  if (mic) { mic.finish(); return; }
+  const st = state.status || {};
+  if (st.speech_state !== "ready") {
+    if (!auto) addMessage("assistant", "⚠ Voice input isn't available: " + $("mic").title.toLowerCase() + ".");
+    return;
+  }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    addMessage("assistant", "⚠ This browser can't use the microphone here.");
+    return;
+  }
+  if (activeSpeaker) activeSpeaker.stop();
+  let stream;
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    await audioCtx.resume();
+    stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
+  } catch (err) {
+    if (!auto) addMessage("assistant", "⚠ Microphone not available: " + (err.name === "NotAllowedError"
+      ? "allow microphone access for this page in your browser (Safari: Settings → Websites → Microphone)." : err.message));
+    return;
+  }
+  const src = audioCtx.createMediaStreamSource(stream);
+  const proc = audioCtx.createScriptProcessor(4096, 1, 1);
+  const chunks = [];
+  const t0 = performance.now();
+  let floor = 0, heard = false, quietSince = 0, closed = false;
+  const close = () => {
+    if (closed) return false;
+    closed = true;
+    proc.disconnect(); src.disconnect();
+    stream.getTracks().forEach((t) => t.stop());
+    mic = null;
+    return true;
+  };
+  mic = {
+    finish() { if (close()) transcribe(chunks, audioCtx.sampleRate, auto, heard); },
+    cancel() { if (close()) micState("idle"); },
+  };
+  proc.onaudioprocess = (e) => {
+    if (closed) return;
+    const d = e.inputBuffer.getChannelData(0);
+    chunks.push(new Float32Array(d));
+    let sum = 0;
+    for (let i = 0; i < d.length; i++) sum += d[i] * d[i];
+    const rms = Math.sqrt(sum / d.length);
+    const now = performance.now() - t0;
+    $("mic").style.setProperty("--level", Math.min(1, rms * 12).toFixed(2));
+    if (now < 300) { floor = Math.max(floor, Math.min(rms, 0.05)); return; } // background noise
+    if (rms > Math.max(0.012, floor * 2.5)) { heard = true; quietSince = 0; }
+    else if (heard) { quietSince = quietSince || now; if (now - quietSince > 1500) mic.finish(); }
+    if (!heard && now > (auto ? 8000 : 12000)) mic.cancel(); // nobody spoke
+    if (now > 120000) mic.finish();
+  };
+  src.connect(proc);
+  proc.connect(audioCtx.destination);
+  micState("recording");
+}
+
+async function transcribe(chunks, rate, auto, heard) {
+  if (!heard) { micState("idle"); return; }
+  micState("working");
+  try {
+    const wav = encodeWAV(downsample(chunks, rate, SPEECH_RATE), SPEECH_RATE);
+    const { text } = await api("POST", "/api/transcribe", { audio: toBase64(wav) });
+    if (!text) { if (!auto) addMessage("assistant", "🎤 I didn't catch that — try again a little closer to the mic."); return; }
+    if (voicePrefs.handsfree && modelReady() && !state.busy && !$("input").value.trim()) {
+      send(text, true);
+    } else {
+      const box = $("input");
+      box.value = (box.value.trim() ? box.value.trimEnd() + " " : "") + text;
+      autosize();
+      box.focus();
+    }
+  } catch (err) {
+    addMessage("assistant", "⚠ Voice input: " + err.message);
+  } finally {
+    micState("idle");
+  }
+}
+
+function downsample(chunks, from, to) {
+  const len = chunks.reduce((n, c) => n + c.length, 0);
+  const all = new Float32Array(len);
+  let o = 0;
+  for (const c of chunks) { all.set(c, o); o += c.length; }
+  if (from === to) return all;
+  const ratio = from / to;
+  const out = new Float32Array(Math.floor(len / ratio));
+  for (let i = 0; i < out.length; i++) {
+    const a = Math.floor(i * ratio), b = Math.min(len, Math.floor((i + 1) * ratio));
+    let s = 0;
+    for (let j = a; j < b; j++) s += all[j];
+    out[i] = s / Math.max(1, b - a);
+  }
+  return out;
+}
+
+function encodeWAV(samples, rate) {
+  const buf = new ArrayBuffer(44 + samples.length * 2);
+  const v = new DataView(buf);
+  const str = (o, s) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
+  str(0, "RIFF"); v.setUint32(4, 36 + samples.length * 2, true); str(8, "WAVE");
+  str(12, "fmt "); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+  str(36, "data"); v.setUint32(40, samples.length * 2, true);
+  for (let i = 0; i < samples.length; i++) {
+    const x = Math.max(-1, Math.min(1, samples[i]));
+    v.setInt16(44 + i * 2, x < 0 ? x * 0x8000 : x * 0x7fff, true);
+  }
+  return new Uint8Array(buf);
+}
+
+function toBase64(bytes) {
+  let s = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+
+$("mic").addEventListener("click", () => { primeSpeech(); listen(false); });

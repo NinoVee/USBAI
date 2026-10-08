@@ -22,9 +22,16 @@ type Message struct {
 
 // Part is one piece of a multimodal message.
 type Part struct {
-	Type     string    `json:"type"` // "text" or "image_url"
-	Text     string    `json:"text,omitempty"`
-	ImageURL *ImageURL `json:"image_url,omitempty"`
+	Type       string      `json:"type"` // "text", "image_url" or "input_audio"
+	Text       string      `json:"text,omitempty"`
+	ImageURL   *ImageURL   `json:"image_url,omitempty"`
+	InputAudio *InputAudio `json:"input_audio,omitempty"`
+}
+
+// InputAudio carries base64 audio for speech models.
+type InputAudio struct {
+	Data   string `json:"data"`
+	Format string `json:"format"` // "wav" or "mp3"
 }
 
 // ImageURL carries an image as a data: URL.

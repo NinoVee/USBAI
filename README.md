@@ -111,6 +111,26 @@ It turns on automatically on computers with 16 GB or more of memory, using the
 smallest vision model on the drive. Change or turn it off under **Settings →
 Image reader**.
 
+### Voice: talk-to-text and spoken replies
+
+- **🎤 Talk instead of typing.** The browser records the microphone, stops
+  by itself when you pause, and sends a 16 kHz WAV to the app. The
+  speech-recognition model on the drive,
+  [Qwen3-ASR 0.6B](https://huggingface.co/Qwen/Qwen3-ASR-0.6B) (about 1 GB,
+  30 languages plus 22 Chinese dialects), turns it into text. It runs as a third small llama.cpp
+  engine. Recordings are never saved and never leave the computer.
+  Browser dictation is not used, because it sends audio to Apple or Google.
+- **🔊 Speak replies.** Replies are read aloud sentence by sentence as they
+  are written, using the computer's own voices. Only on-device voices are
+  offered. Each agent can have its own voice (Agents → Edit → Voice), and
+  every reply has a 🔊 button. Code, links and Markdown symbols are skipped.
+- **Hands-free** (Settings → Voice, on by default): what you say is sent right
+  away, and when 🔊 is on the mic opens again after the reply is spoken, for
+  a back-and-forth conversation.
+- Safari asks once for microphone permission. On a Mac, better voices are free
+  in System Settings → Accessibility → Spoken Content → System voice →
+  Manage Voices.
+
 ### Appearance
 
 Pick a theme with the toggle buttons under **Settings → Appearance**. The
@@ -251,6 +271,7 @@ laptop; the R1 distill below is the version that runs locally.
 | `deepseek-r1-8b` | DeepSeek R1 0528 (Qwen3 8B distill), reasons step by step; slow, and in testing it reasoned its way to a wrong answer on simple arithmetic, so treat it as optional | ~5.0 GB | 12 GB+ |
 | `qwen3-1.7b` | Qwen3 1.7B Q4_K_M | ~1.1 GB | 4 GB+ |
 | `nomic-embed` | nomic-embed-text v1.5 Q8_0 | ~140 MB | — |
+| `qwen3-asr-0.6b` | Qwen3-ASR 0.6B Q8_0 + audio encoder, speech to text (Apache-2.0) | ~1.0 GB | 4 GB+ |
 
 To use any other GGUF model, add an entry to `config.json`. For a vision
 model, also set `mmproj` and `mmproj_url`. When `build-drive.sh` runs on an
@@ -261,7 +282,9 @@ To **update a drive you already use**, shut Private AI down and run
 `scripts/update-drive.sh "/Volumes/GANG AI"` (with your drive's path). It
 rebuilds the programs, copies them and the launchers to the drive, and adds
 new model entries to the drive's `config.json`. Models and your data are
-untouched.
+untouched. If an update adds a new model, such as the speech model, download
+it with `go run ./cmd/drivetool fetch-models -drive "/Volumes/GANG AI"`
+(already-present models are skipped).
 
 ### Personalities (GANG)
 

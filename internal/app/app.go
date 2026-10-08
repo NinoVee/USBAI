@@ -68,6 +68,11 @@ type App struct {
 	visionErr   string
 	visionGen   int
 
+	// Speech recognition (talk-to-text), see speech.go.
+	speech      *llama.Server
+	speechModel config.Model
+	speechState string
+
 	// Unlocked user data; nil vault means locked.
 	dataMu sync.RWMutex
 	vault  *vault.Vault
@@ -100,6 +105,7 @@ func New(cfg config.Config, host platform.Info, log io.Writer) *App {
 		cancel:      cancel,
 		chatState:   StateStarting,
 		embedState:  StateStarting,
+		speechState: StateStarting,
 		visionState: StateOff,
 		Shutdown:    make(chan struct{}),
 	}
@@ -182,10 +188,12 @@ func (a *App) chatCandidates() (cands []config.Model, problems []string) {
 func (a *App) StartEngines() {
 	// One at a time: models loading in parallel from the same USB drive
 	// slow each other down. The chat model comes first; the small
-	// embedding model (document search) and the image reader follow.
+	// embedding model (document search), the image reader and speech
+	// recognition follow.
 	go func() {
 		a.startChat()
 		a.startEmbed()
+		a.startSpeech()
 	}()
 }
 
@@ -225,6 +233,8 @@ func (a *App) startServer(m config.Model, embedding bool) (*llama.Server, string
 		prefix := "chat"
 		if embedding {
 			prefix = "embed"
+		} else if m.Role == "speech" {
+			prefix = "speech"
 		}
 		a.logf("Starting %s model %q with runtime %s", prefix, m.Name, name)
 		srv, err := llama.Start(a.ctx, llama.Options{
@@ -522,11 +532,12 @@ func (a *App) Stop() {
 		a.cancel()
 		a.lock()
 		a.engMu.Lock()
-		chat, embed, vision := a.chat, a.embed, a.vision
-		a.chat, a.embed, a.vision = nil, nil, nil
+		chat, embed, vision, speech := a.chat, a.embed, a.vision, a.speech
+		a.chat, a.embed, a.vision, a.speech = nil, nil, nil, nil
 		a.engMu.Unlock()
 		chat.Stop()
 		embed.Stop()
 		vision.Stop()
+		speech.Stop()
 	})
 }

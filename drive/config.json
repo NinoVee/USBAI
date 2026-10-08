@@ -123,6 +123,21 @@
       "context": 2048,
       "query_prefix": "search_query: ",
       "document_prefix": "search_document: "
+    },
+    {
+      "id": "qwen3-asr-0.6b",
+      "name": "Qwen3 ASR 0.6B (speech to text)",
+      "role": "speech",
+      "file": "models/speech/Qwen3-ASR-0.6B-Q8_0.gguf",
+      "url": "https://huggingface.co/ggml-org/Qwen3-ASR-0.6B-GGUF/resolve/main/Qwen3-ASR-0.6B-Q8_0.gguf",
+      "size": 804749248,
+      "sha256": "bca259818b50ca7c4c05e9bdb35a5dc04fa039653a6d6f3f0f331f96f6aa1971",
+      "mmproj": "models/speech/mmproj-Qwen3-ASR-0.6B-Q8_0.gguf",
+      "mmproj_url": "https://huggingface.co/ggml-org/Qwen3-ASR-0.6B-GGUF/resolve/main/mmproj-Qwen3-ASR-0.6B-Q8_0.gguf",
+      "mmproj_size": 214392480,
+      "mmproj_sha256": "41a342b5e4c514e968cb756de6cd1b7be39eff43c44c57a2ef5fc6522e36603d",
+      "min_ram_gb": 4,
+      "context": 4096
     }
   ]
 }
