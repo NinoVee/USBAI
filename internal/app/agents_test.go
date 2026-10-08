@@ -54,6 +54,8 @@ type testServer struct {
 	t    *testing.T
 	a    *App
 	base string
+	// decide answers approval requests during chat (nil: never answered).
+	decide func(Action) bool
 }
 
 func newTestServer(t *testing.T) *testServer {
@@ -145,6 +147,11 @@ func (ts *testServer) chat(body map[string]any) turn {
 		} else if strings.HasPrefix(line, "data: ") {
 			data := json.RawMessage(strings.TrimPrefix(line, "data: "))
 			tr.events[ev] = append(tr.events[ev], data)
+			if ev == "approve" && ts.decide != nil {
+				var act Action
+				json.Unmarshal(data, &act)
+				ts.call("POST", "/api/actions/"+act.ID, map[string]bool{"allow": ts.decide(act)}, nil)
+			}
 			if ev == "token" {
 				var x struct{ Text string }
 				json.Unmarshal(data, &x)

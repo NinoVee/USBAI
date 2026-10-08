@@ -105,6 +105,24 @@
         </div>
         <p class="muted small">Only search words and page addresses are sent — never your chats, files or memory. Pages are read without cookies or logins, and addresses on this computer or your home network are blocked. Your Brave key is stored encrypted in your vault.</p>
       </div>
+      <div class="card web-card">
+        <h3>🖥️ Computer access</h3>
+        <div class="web-row">
+          <label class="switch"><input type="checkbox" id="pc-on"><span class="slider"></span></label>
+          <div class="grow"><strong>Let agents act on this computer</strong><div class="sub muted">Open apps, files and websites, work with files in your workspace folder, and run your Shortcuts. <b>Every action asks you first</b> with Allow / Deny.</div></div>
+        </div>
+        <form id="pc-form" class="inline-form">
+          <input id="pc-workspace" autocomplete="off" placeholder="~/Documents/Private AI Workspace" aria-label="Workspace folder">
+          <button class="primary">Save folder</button>
+        </form>
+        <p class="muted small">The <b>workspace folder</b> is the only place agents can read and write files. Reading there doesn't ask; creating or changing a file does.</p>
+        <div class="web-row">
+          <label class="switch"><input type="checkbox" id="pc-terminal"><span class="slider"></span></label>
+          <div class="grow"><strong>Terminal commands</strong> <span class="muted">(advanced)</span><div class="sub muted">Lets agents with ⌨️ run commands in the workspace folder. Commands can do anything you can — read every command before you press Allow.</div></div>
+        </div>
+        <span id="pc-status" class="muted small"></span>
+        <p class="muted small">Give an agent the 🖥️ 🗂 ⚡ ⌨️ tools (or start from the <b>Computer Assistant</b> template). For safety, an agent can't have internet and computer tools together.</p>
+      </div>
       <div id="agent-form-wrap" class="hidden">
         <form id="agent-form" class="card agent-form">
           <h3 id="agent-form-title">New agent</h3>

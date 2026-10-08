@@ -490,3 +490,12 @@ input[type=range] { padding: 0; }
 .call-actions button { min-width: 120px; padding: 12px 18px; }
 
 #cache-clear:disabled { opacity: .5; cursor: default; }
+
+/* Approval card: an agent wants to act on this computer */
+.approval { margin: 8px 0; padding: 10px 12px; border: 1px solid var(--warn); border-radius: var(--radius); background: color-mix(in srgb, var(--warn) 8%, transparent); }
+.approval-title { font-weight: 600; }
+.approval-detail { margin: 8px 0 0; max-height: 220px; overflow: auto; white-space: pre-wrap; font-size: 12px; background: var(--surface-2); padding: 8px; border-radius: 6px; }
+.approval-actions { display: flex; gap: 8px; margin-top: 10px; }
+.approval-ok { color: var(--ok); font-weight: 600; }
+.approval-no { color: var(--danger); font-weight: 600; }
+.call-approval { max-width: 520px; width: 100%; text-align: left; }

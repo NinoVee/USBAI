@@ -35,6 +35,9 @@ type ChatEvents interface {
 	Token(text string) error
 	ToolCall(step ToolStep) error
 	ToolResult(step ToolStep) error
+	// Approve shows an action the agent wants to take on this computer;
+	// the user answers with AnswerAction.
+	Approve(act Action) error
 }
 
 // ToolStep records one tool use by an agent, for display.
@@ -285,7 +288,7 @@ func (a *App) Chat(req ChatRequest, ev ChatEvents) error {
 			if err = ev.ToolCall(ts); err != nil {
 				break
 			}
-			result := a.runTool(agent, call)
+			result := a.runTool(turnCtx, ev, agent, call)
 			done[key] = result
 			ts.Result = preview(result)
 			steps = append(steps, ts)
@@ -378,10 +381,17 @@ func (a *App) agentTools(ag *Agent) []string {
 		return nil
 	}
 	web := a.webEnabled()
+	cs, _ := a.ComputerSettings()
+	computer, terminal := cs.Enabled, cs.Enabled && cs.Terminal
 	var out []string
 	for _, t := range ag.Tools {
 		// Web tools only while internet access is switched on.
 		if webTools[t] && !web {
+			continue
+		}
+		// Computer tools only while computer access is switched on, and
+		// terminal commands only when those are allowed too.
+		if computerTools[t] && (!computer || (t == "run_command" && !terminal)) {
 			continue
 		}
 		// Document tools are useless for an agent without document access.
@@ -412,6 +422,15 @@ func stripThink(s string) string {
 		}
 		s = s[:i] + s[i+j+len("</think>"):]
 	}
+}
+
+func hasComputerTool(ag *Agent) bool {
+	for _, t := range ag.Tools {
+		if computerTools[t] {
+			return true
+		}
+	}
+	return false
 }
 
 // reWebAddress finds a web address in the user's message.
@@ -454,6 +473,15 @@ func (a *App) systemPrompt(agent *Agent) string {
 			}
 		} else {
 			b.WriteString(" You have no internet access, so you cannot look up current events; say so if asked.")
+		}
+		if hasComputerTool(agent) {
+			if a.computerEnabled() {
+				b.WriteString(" You can act on the user's computer with your computer tools. Each action is shown to the user, who must press Allow first; say briefly what you are about to do." +
+					" If the user denies an action, don't try it again. File tools work only inside the user's workspace folder; use paths relative to it." +
+					" On a Mac, the user's Shortcuts can do many things (messages, reminders, calendar, music, settings): use list_shortcuts to see them, then run_shortcut.")
+			} else {
+				b.WriteString(" Your computer tools are unavailable because computer access is switched off in the Agents tab; say so if the user asks you to do something on the computer.")
+			}
 		}
 		if agent.HasTool("calculator") {
 			b.WriteString(" For any arithmetic, call the calculator tool instead of computing it yourself.")

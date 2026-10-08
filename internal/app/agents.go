@@ -97,6 +97,13 @@ var AgentTemplates = []Agent{
 		Knowledge:    "none", Temperature: 0.3, SearchFirst: true,
 	},
 	{
+		Name: "Computer Assistant", Emoji: "🖥️",
+		Description:  "Does tasks on this computer: opens apps, works with files in your workspace, runs your Shortcuts. Asks before every action.",
+		Instructions: "You help the user get things done on their computer. Plan briefly, then use your tools one step at a time. Before an action, say in one short sentence what you will do; the user must approve each one. Work with files only in the workspace folder. To do things in other apps (messages, reminders, calendar, music, settings), look for a suitable Shortcut with list_shortcuts and run it; if there is none, explain how the user can make one in the Shortcuts app. If an action is denied, don't repeat it; ask what to do instead. Finish with a short summary of what was done.",
+		Tools:        []string{"open_item", "list_files", "read_file", "write_file", "list_shortcuts", "run_shortcut", "get_datetime", "calculator"},
+		Knowledge:    "none", Temperature: 0.2,
+	},
+	{
 		Name: "Writing Coach", Emoji: "✍️",
 		Description:  "Improves your writing while keeping your voice.",
 		Instructions: "You help the user write clearly. Suggest concrete edits, explain briefly why, and keep the user's voice and meaning. Offer a revised version at the end.",
@@ -162,6 +169,11 @@ func (a *App) SaveAgent(in Agent) (Agent, error) {
 	}
 	if !in.HasTool("web_search") {
 		in.SearchFirst = false
+	}
+	// A web page must never be able to steer an agent that can act on
+	// this computer.
+	if hasComputerTool(&in) && (in.HasTool("web_search") || in.HasTool("read_webpage")) {
+		return Agent{}, errors.New("an agent can't have both internet (🌐) and computer (🖥️ 🗂 ⚡ ⌨️) tools: a web page could trick it into acting on your computer. Make two agents instead")
 	}
 	if in.Temperature < 0 || in.Temperature > 1.5 {
 		in.Temperature = 0.6

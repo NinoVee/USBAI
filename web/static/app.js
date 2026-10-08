@@ -394,6 +394,19 @@ async function send(text, opts = {}) {
           msg._steps.classList.remove("hidden");
           msg._pending = addStep(msg._steps, data, false);
           if (!raw) body.textContent = `Using ${toolLabel(data.tool)}…`;
+        } else if (ev === "approve") {
+          // The agent wants to act on this computer: ask the user.
+          const card = approvalCard(data);
+          msg.insertBefore(card, msg.querySelector(".msg-tools"));
+          if (!raw) body.textContent = "Waiting for your OK…";
+          card.scrollIntoView({ block: "nearest", behavior: "smooth" });
+          if (call) {
+            $("call").querySelector(".call-actions").before(el("div", { class: "approval call-approval", "data-action": data.id },
+              el("div", { class: "approval-title" }, "🖥️ " + data.title),
+              el("div", { class: "approval-actions" },
+                el("button", { type: "button", class: "primary", onclick: () => card._answer(true) }, "Allow"),
+                el("button", { type: "button", class: "danger", onclick: () => card._answer(false) }, "Deny"))));
+          }
         } else if (ev === "tool_result") {
           if (msg._pending) msg._pending.append(" → " + data.result);
           if (!raw) body.textContent = "Thinking…";
@@ -800,9 +813,67 @@ $("web-test").addEventListener("click", async () => {
 });
 
 const usesWeb = (a) => (a.tools || []).some((t) => t === "web_search" || t === "read_webpage");
+const COMPUTER_TOOLS = ["open_item", "list_files", "read_file", "write_file", "list_shortcuts", "run_shortcut", "run_command"];
+const usesComputer = (a) => (a.tools || []).some((t) => COMPUTER_TOOLS.includes(t));
+
+// ---- Computer access ----
+async function renderComputer() {
+  let cs;
+  try { cs = await api("GET", "/api/computer"); } catch { return; }
+  $("pc-on").checked = cs.enabled;
+  $("pc-terminal").checked = cs.terminal;
+  $("pc-terminal").disabled = !cs.enabled;
+  if (document.activeElement !== $("pc-workspace")) $("pc-workspace").value = cs.workspace || "";
+  $("pc-status").textContent = !cs.enabled ? "Computer access is off."
+    : `On. Workspace: ${cs.workspace}.` + (cs.shortcuts ? "" : " (Shortcuts are only available on a Mac.)");
+}
+async function saveComputer(extra) {
+  try {
+    await api("POST", "/api/computer", {
+      enabled: $("pc-on").checked, terminal: $("pc-terminal").checked, workspace: $("pc-workspace").value.trim(), ...extra,
+    });
+  } catch (err) {
+    $("pc-status").textContent = "⚠ " + err.message;
+    return;
+  }
+  renderComputer();
+}
+$("pc-on").addEventListener("change", () => saveComputer());
+$("pc-terminal").addEventListener("change", (e) => {
+  if (e.target.checked && !confirm("Allow agents to run terminal commands?\n\nA command can do anything you can do on this computer, including deleting files. You'll be asked before each one: read it carefully before pressing Allow.")) {
+    e.target.checked = false;
+    return;
+  }
+  saveComputer();
+});
+$("pc-form").addEventListener("submit", (e) => { e.preventDefault(); saveComputer(); });
+
+// The card shown when an agent wants to act on this computer.
+function approvalCard(act) {
+  const card = el("div", { class: "approval" },
+    el("div", { class: "approval-title" }, "🖥️ " + act.title),
+    act.detail ? el("pre", { class: "approval-detail" }, act.detail) : null);
+  const buttons = el("div", { class: "approval-actions" });
+  const answer = async (allow) => {
+    buttons.querySelectorAll("button").forEach((b) => (b.disabled = true));
+    try {
+      await api("POST", "/api/actions/" + act.id, { allow });
+      buttons.replaceChildren(el("span", { class: allow ? "approval-ok" : "approval-no" }, allow ? "✓ Allowed" : "✕ Denied"));
+    } catch (err) {
+      buttons.replaceChildren(el("span", { class: "approval-no" }, "⚠ " + err.message));
+    }
+    document.querySelectorAll(`[data-action="${act.id}"]`).forEach((n) => n.remove()); // the call screen's copy
+  };
+  buttons.append(el("button", { type: "button", class: "primary", onclick: () => answer(true) }, "Allow"),
+    el("button", { type: "button", class: "danger", onclick: () => answer(false) }, "Deny"));
+  card.append(buttons);
+  card._answer = answer;
+  return card;
+}
 
 async function renderAgents() {
   renderWeb();
+  renderComputer();
   await loadAgents();
   const list = $("agent-list");
   list.replaceChildren();
@@ -811,6 +882,7 @@ async function renderAgents() {
     list.append(el("li", {},
       el("div", { class: "agent-emoji" }, a.emoji),
       el("div", { class: "grow" }, a.name, usesWeb(a) ? el("span", { class: "web-badge", title: "This agent can use the internet when it's switched on" }, "🌐 internet") : null,
+        usesComputer(a) ? el("span", { class: "web-badge", title: "This agent can act on this computer when computer access is on; it asks before every action" }, "🖥️ computer") : null,
         el("div", { class: "sub" }, [a.description, (a.tools || []).length ? "Tools: " + a.tools.map(toolLabel).join(", ") : "No tools",
           { all: "All files", selected: `${(a.doc_ids || []).length} selected file(s)`, none: "No files" }[a.knowledge] || ""].filter(Boolean).join(" · "))),
       el("button", { class: "primary", onclick: () => chatWith(a.id) }, "Chat"),

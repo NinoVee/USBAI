@@ -217,6 +217,27 @@ reach the internet. None of them can run programs or touch the host
 computer's files. The most an agent can change is adding a note or a memory to
 your own vault. Agents and their chats are encrypted like everything else.
 
+### Computer access for agents (optional)
+
+**Agents → Computer access** lets agents do tasks on the computer. It is off
+by default, and **every action that changes anything shows a card in the
+chat with Allow and Deny** (also on the call screen during a 📞 call); a
+request nobody answers within 10 minutes is denied, and so is one whose
+chat is closed. The tools, which you give each agent individually:
+
+| Tool | What it does | Asks first |
+|---|---|---|
+| 🖥️ Open apps, files and websites | `open` (macOS), `start` (Windows), `xdg-open` (Linux) | yes |
+| 🗂 Workspace: list / read files | Only inside the **workspace folder** (default `~/Documents/Private AI Workspace`); `..`, other paths and symbolic links that lead out are refused | no |
+| 🗂 Workspace: create and change files | Text files in the workspace, up to 1 MB | yes, showing the content |
+| ⚡ See / run Shortcuts (Mac) | Runs the user's Shortcuts by name (`shortcuts run`), so agents can reach Messages, Reminders, Calendar, Music and more through Shortcuts the user made | running asks |
+| ⌨️ Run terminal commands (advanced) | Runs a command in the workspace with a 2-minute limit; needs its own switch, which warns first | yes, showing the command |
+
+An agent can't have both internet (🌐) and computer tools, so a web page can
+never steer an agent that can act on the computer. The **Computer Assistant**
+template sets up an agent with the open, workspace and Shortcuts tools.
+Small local models make mistakes: read each card before pressing Allow.
+
 ### Internet access for agents (optional)
 
 **Agents → Internet access** has two switches, both off by default:

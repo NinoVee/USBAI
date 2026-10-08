@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -71,6 +72,45 @@ var toolCatalog = map[string]toolSpec{
 		Params:      map[string]string{"url": "the page address, e.g. https://example.com/article"},
 		Required:    []string{"url"},
 	},
+	"open_item": {
+		Label:       "🖥️ Open apps, files and websites",
+		Description: "Open an app by name (e.g. Safari, Notes, Music), a file or folder (a path, relative paths are in the workspace) or a web address on the user's computer. The user must approve.",
+		Params:      map[string]string{"target": "an app name, a file path or a web address"},
+		Required:    []string{"target"},
+	},
+	"list_files": {
+		Label:       "🗂 Workspace: list files",
+		Description: "List the files in the user's workspace folder (or a subfolder of it).",
+		Params:      map[string]string{"path": "a subfolder of the workspace, or empty for the workspace itself"},
+	},
+	"read_file": {
+		Label:       "🗂 Workspace: read files",
+		Description: "Read a file from the user's workspace folder (text, Markdown, CSV, PDF, Word…).",
+		Params:      map[string]string{"path": "the file's path inside the workspace, e.g. notes/todo.md"},
+		Required:    []string{"path"},
+	},
+	"write_file": {
+		Label:       "🗂 Workspace: create and change files",
+		Description: "Create or replace a text file in the user's workspace folder. The user must approve.",
+		Params:      map[string]string{"path": "the file's path inside the workspace, e.g. reports/summary.md", "content": "the full text of the file"},
+		Required:    []string{"path", "content"},
+	},
+	"list_shortcuts": {
+		Label:       "⚡ See Shortcuts (Mac)",
+		Description: "List the user's Shortcuts (Mac Shortcuts app).",
+	},
+	"run_shortcut": {
+		Label:       "⚡ Run Shortcuts (Mac)",
+		Description: "Run one of the user's Shortcuts by its exact name, optionally with text input. Shortcuts can send messages, add reminders and events, play music, change settings and more. The user must approve.",
+		Params:      map[string]string{"name": "the Shortcut's exact name", "input": "optional text to give the Shortcut"},
+		Required:    []string{"name"},
+	},
+	"run_command": {
+		Label:       "⌨️ Run terminal commands (advanced)",
+		Description: "Run a shell command in the user's workspace folder and return its output. The user must approve every command.",
+		Params:      map[string]string{"command": "the command line to run"},
+		Required:    []string{"command"},
+	},
 	"create_note": {
 		Label:       "Create notes",
 		Description: "Save a note as a new document in the user's Files (Markdown). Use for summaries, plans or anything the user wants to keep.",
@@ -126,7 +166,7 @@ const toolResultLimit = 6000 // characters returned to the model per call
 // runTool executes one tool call for an agent and returns the text result
 // given back to the model. Errors are returned as text too, so the model can
 // recover (e.g. retry with a different document name).
-func (a *App) runTool(ag *Agent, call llama.ToolCall) string {
+func (a *App) runTool(ctx context.Context, ev ChatEvents, ag *Agent, call llama.ToolCall) string {
 	if !ag.HasTool(call.Function.Name) {
 		return "Error: tool " + call.Function.Name + " is not enabled for this agent."
 	}
@@ -182,6 +222,8 @@ func (a *App) runTool(ag *Agent, call llama.ToolCall) string {
 		} else {
 			return "Error: " + err.Error() + "\nThis page could not be read. Do not describe or cite its contents; say it could not be opened."
 		}
+	case "open_item", "list_files", "read_file", "write_file", "list_shortcuts", "run_shortcut", "run_command":
+		return a.limitResult(a.runComputerTool(ctx, ev, call.Function.Name, arg))
 	case "create_note":
 		title := arg("title")
 		if title == "" {
@@ -538,4 +580,11 @@ func callFunc(name string, args []float64) (float64, error) {
 		return v, nil
 	}
 	return 0, fmt.Errorf("unknown function %q", name)
+}
+
+func (a *App) limitResult(out string) string {
+	if r := []rune(out); len(r) > toolResultLimit {
+		return string(r[:toolResultLimit]) + "\n…(truncated)"
+	}
+	return out
 }

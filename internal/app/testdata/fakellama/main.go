@@ -125,6 +125,13 @@ func main() {
 				}
 			}
 		}
+		// "use: TOOL {json args}" calls any offered tool, for tests.
+		if i := strings.Index(last, "use: "); i >= 0 && lastMsg.Role == "user" && len(req.Tools) > 0 {
+			name, args, _ := strings.Cut(strings.TrimSpace(last[i+5:]), " ")
+			send(map[string]any{"tool_calls": []any{map[string]any{"index": 0, "id": "u1", "function": map[string]any{"name": name, "arguments": args}}}})
+			fmt.Fprint(w, "data: [DONE]\n\n")
+			return
+		}
 		if i := strings.Index(last, "calc:"); i >= 0 && lastMsg.Role == "user" && len(req.Tools) > 0 {
 			args, _ := json.Marshal(map[string]string{"expression": strings.TrimSpace(last[i+5:])})
 			send(map[string]any{"tool_calls": []any{map[string]any{"index": 0, "id": "c1", "function": map[string]any{"name": "calculator", "arguments": ""}}}})

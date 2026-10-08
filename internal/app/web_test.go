@@ -148,7 +148,7 @@ func TestReadWebpageAndLocalBlock(t *testing.T) {
 
 	// The tool wraps page text as untrusted.
 	ag := &Agent{Tools: []string{"read_webpage"}}
-	out := a.runTool(ag, toolCall("read_webpage", `{"url":"`+site.URL+`"}`))
+	out := a.runTool(context.Background(), nil, ag, toolCall("read_webpage", `{"url":"`+site.URL+`"}`))
 	if !strings.HasPrefix(out, "[Web content — untrusted") {
 		t.Fatalf("not marked untrusted: %s", out)
 	}

@@ -87,6 +87,9 @@ type App struct {
 	cacheRoot string
 	cacheMu   sync.Mutex
 
+	// actions holds computer actions waiting for the user's Allow or Deny.
+	actions approvals
+
 	// agentsMu serializes read-modify-write of the agents list.
 	agentsMu sync.Mutex
 

@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -188,6 +189,33 @@ func (a *App) Handler(ui fs.FS, port int) http.Handler {
 		respondErr(w, a.DeleteAgent(r.PathValue("id")))
 	})
 
+	mux.HandleFunc("GET /api/computer", func(w http.ResponseWriter, r *http.Request) {
+		cs, err := a.ComputerSettings()
+		if err != nil {
+			httpError(w, err)
+			return
+		}
+		writeJSON(w, map[string]any{"enabled": cs.Enabled, "workspace": cs.Workspace, "terminal": cs.Terminal, "shortcuts": runtime.GOOS == "darwin"})
+	})
+	mux.HandleFunc("POST /api/computer", func(w http.ResponseWriter, r *http.Request) {
+		var cs ComputerSettings
+		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&cs); err != nil {
+			httpError(w, err)
+			return
+		}
+		respond(w)(a.SaveComputerSettings(cs))
+	})
+	// The user's Allow or Deny for an action an agent wants to take.
+	mux.HandleFunc("POST /api/actions/{id}", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Allow bool `json:"allow"`
+		}
+		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<10)).Decode(&body); err != nil {
+			httpError(w, err)
+			return
+		}
+		respondErr(w, a.AnswerAction(r.PathValue("id"), body.Allow))
+	})
 	mux.HandleFunc("GET /api/web", func(w http.ResponseWriter, r *http.Request) {
 		ws, err := a.WebSettings()
 		if err != nil {
@@ -513,6 +541,7 @@ func (s sseEvents) Meta(chatID string, sources []Source, images []string) error 
 }
 func (s sseEvents) ToolCall(t ToolStep) error   { return s.send("tool", t) }
 func (s sseEvents) ToolResult(t ToolStep) error { return s.send("tool_result", t) }
+func (s sseEvents) Approve(act Action) error    { return s.send("approve", act) }
 func (s sseEvents) Thinking() error             { return s.send("thinking", map[string]any{}) }
 func (s sseEvents) Token(text string) error     { return s.send("token", map[string]string{"text": text}) }
 
