@@ -6,6 +6,8 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -288,5 +290,33 @@ func TestSearchFallbacks(t *testing.T) {
 	if err != nil || !strings.HasPrefix(provider, "Wikipedia") || !strings.Contains(provider, "limiting searches") || len(res) != 1 ||
 		res[0].URL != "https://en.wikipedia.org/wiki/Go_%28programming_language%29" || res[0].Snippet != "Go is a programming language" {
 		t.Fatalf("wikipedia: %v %s %+v", err, provider, res)
+	}
+}
+
+func TestStorageReport(t *testing.T) {
+	a := newWebApp(t)
+	os.MkdirAll(filepath.Join(a.cfg.Root, "models", "chat"), 0o755)
+	os.WriteFile(filepath.Join(a.cfg.Root, "models", "chat", "m.gguf"), make([]byte, 50000), 0o644)
+	if _, err := a.AddDocument("notes.txt", []byte(strings.Repeat("hello world ", 5000))); err != nil {
+		t.Fatal(err)
+	}
+	a.Remember("I like tea")
+	a.SaveAgent(Agent{Name: "Helper"})
+	r, err := a.Storage()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range []string{"models", "files", "memory", "agents"} {
+		if r.Parts[k] <= 0 {
+			t.Errorf("%s: %d bytes (%v)", k, r.Parts[k], r.Parts)
+		}
+	}
+	if r.Parts["models"] != 50000 || r.Parts["files"] < 60000 || r.Locked || r.Total <= 0 {
+		t.Errorf("report: %+v", r)
+	}
+	a.lock()
+	r, _ = a.Storage()
+	if !r.Locked || r.Parts["files"] != 0 || r.Parts["data"] <= 0 {
+		t.Errorf("locked report: %+v", r)
 	}
 }

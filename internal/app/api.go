@@ -105,6 +105,9 @@ func (a *App) Handler(ui fs.FS, port int) http.Handler {
 	})
 	mux.HandleFunc("POST /api/docs", a.handleUpload)
 	mux.HandleFunc("GET /tts/{path...}", a.handleVoiceFile)
+	mux.HandleFunc("GET /api/storage", func(w http.ResponseWriter, r *http.Request) {
+		respond(w)(a.Storage())
+	})
 	mux.HandleFunc("POST /api/transcribe", func(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			Audio string `json:"audio"` // base64 WAV

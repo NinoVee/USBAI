@@ -222,6 +222,7 @@ function show(view) {
   const cur = document.querySelector(`#tabs button[data-view="${view}"]`);
   if (cur) $("menu-current").textContent = cur.lastChild.textContent.trim();
   if (window.matchMedia("(max-width: 760px)").matches) setMenu(false); // phones: close the menu after choosing
+  refreshStorage();
   if (view === "agents") renderAgents();
   if (view === "files") renderDocs();
   if (view === "memory") renderMemory();
@@ -1838,3 +1839,54 @@ $("call-mute").addEventListener("click", () => {
   if (call.muted && call.state === "hearing") { call.chunks = []; callSay("listening", "Muted"); }
 });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && call) endCall(); });
+
+// ---- Drive storage bar ----
+// What is using the drive, by kind, colour-coded. The model cache lives on
+// this computer, not the drive, so it is listed separately below the bar.
+
+const STORAGE_PARTS = [
+  ["models", "AI models", "#5b8def"],
+  ["files", "Files", "#f2a33a"],
+  ["chats", "Chats", "#b07cf2"],
+  ["memory", "Memory", "#ef5da8"],
+  ["agents", "Agents", "#34c77b"],
+  ["app", "App & engines", "#4fd1c5"],
+  ["data", "Your data (locked)", "#c9a227"],
+  ["other", "Other", "#8a94a6"],
+];
+const CACHE_COLOR = "#e86f4a";
+
+function fmtBytes(n) {
+  if (n >= 1 << 30) return (n / (1 << 30)).toFixed(n >= 100 * (1 << 30) ? 0 : 1) + " GB";
+  if (n >= 1 << 20) return Math.round(n / (1 << 20)) + " MB";
+  if (n >= 1 << 10) return Math.round(n / (1 << 10)) + " KB";
+  return n + " B";
+}
+
+async function refreshStorage() {
+  if ($("tabs").classList.contains("hidden")) return;
+  let r;
+  try { r = await api("GET", "/api/storage"); } catch { return; }
+  const used = r.total - r.free;
+  $("storage").classList.remove("hidden");
+  $("storage-used").textContent = `${fmtBytes(used)} of ${fmtBytes(r.total)}`;
+  const bar = $("storage-bar"), legend = $("storage-legend");
+  bar.replaceChildren();
+  legend.replaceChildren();
+  for (const [key, label, color] of STORAGE_PARTS) {
+    const n = (r.parts || {})[key] || 0;
+    // The kinds you asked for are always listed; the others only when present
+    // (tiny settings files are not worth a row).
+    const always = ["models", "files", "chats", "memory", "agents"].includes(key) && !r.locked;
+    if (!always && (!n || (key === "data" && !r.locked && n < (1 << 20)))) continue;
+    const name = key === "data" && !r.locked ? "Settings" : label;
+    const pct = (100 * n) / r.total;
+    if (n) bar.append(el("span", { style: `width:${pct.toFixed(3)}%;background:${color}`, title: `${name}: ${fmtBytes(n)}` }));
+    legend.append(el("li", {}, el("i", { style: `background:${color}` }), name, el("b", {}, fmtBytes(n))));
+  }
+  legend.append(el("li", {}, el("i", { style: "background:var(--surface-2);border:1px solid var(--border)" }), "Free", el("b", {}, fmtBytes(r.free))));
+  legend.append(el("li", { class: "sep", title: "Copies of AI models on this computer's disk (Settings → Faster loading)" },
+    el("i", { style: `background:${CACHE_COLOR}` }), "Cache (this computer)", el("b", {}, fmtBytes(r.cache))));
+  bar.setAttribute("aria-label", `${fmtBytes(used)} of ${fmtBytes(r.total)} used`);
+}
+setInterval(refreshStorage, 30000);

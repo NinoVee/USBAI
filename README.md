@@ -169,6 +169,14 @@ the left that opens and closes like a drop-down; the choice is remembered. On
 a phone or narrow window the menu sits above the page and closes after you
 pick a section. The typing box spans the page and grows as you type.
 
+Under the menu, a **drive storage bar** shows what is using the drive,
+colour-coded: AI models, files, chats (with their pictures), memory, agents,
+the app and its engines, other files, and free space. Your data's split is
+measured from the encrypted vault and is only known while it is unlocked.
+The model cache (Settings → Faster loading) is on this computer, not the
+drive, so it is listed separately below the bar. It refreshes every 30
+seconds and whenever you switch sections.
+
 The live call shows a **particle cloud**: a swirling sphere of glowing dots
 in the theme's colours, inspired by the Apple Watch pairing animation. It
 gathers when the call connects, drifts while listening, follows your voice,

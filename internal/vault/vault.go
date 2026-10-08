@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -230,6 +231,41 @@ func (v *Vault) List(prefix string) []string {
 		}
 	}
 	sort.Strings(out)
+	return out
+}
+
+// Usage adds up the stored (encrypted) size of every object, grouped by
+// the category classify gives its name. The vault's own index and header
+// count as "".
+func (v *Vault) Usage(classify func(name string) string) map[string]int64 {
+	v.mu.Lock()
+	names := make([]string, 0, len(v.names))
+	for n := range v.names {
+		names = append(names, n)
+	}
+	v.mu.Unlock()
+	out := map[string]int64{}
+	for _, n := range names {
+		if st, err := os.Stat(v.objectPath(n)); err == nil {
+			out[classify(n)] += st.Size()
+		}
+	}
+	var all int64
+	filepath.WalkDir(v.dir, func(_ string, d fs.DirEntry, err error) error {
+		if err == nil && !d.IsDir() {
+			if info, err := d.Info(); err == nil {
+				all += info.Size()
+			}
+		}
+		return nil
+	})
+	var named int64
+	for _, b := range out {
+		named += b
+	}
+	if rest := all - named; rest > 0 {
+		out[""] += rest
+	}
 	return out
 }
 

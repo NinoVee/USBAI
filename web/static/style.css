@@ -188,6 +188,20 @@ input[type=range] { padding: 0; }
 .menu-list button.active { color: var(--accent); border-left-color: var(--accent); background: var(--surface-2); }
 .menu-list .ico { width: 1.4em; text-align: center; }
 
+/* Drive storage bar (in the menu, under Settings) */
+.storage { margin: 14px 4px 4px; padding-top: 12px; border-top: 1px solid var(--border); font-size: 12px; }
+.storage-head { display: flex; flex-direction: column; gap: 1px; color: var(--text); font-weight: 600; margin-bottom: 6px; }
+.storage-head #storage-used { color: var(--muted); font-weight: 400; text-transform: none; letter-spacing: normal; font-size: 12px; }
+.storage-bar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: var(--surface-2); border: 1px solid var(--border); }
+.storage-bar span { height: 100%; min-width: 2px; }
+.storage-legend { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 3px; }
+.storage-legend li { display: flex; align-items: center; gap: 6px; color: var(--muted); }
+.storage-legend li b { font-weight: 400; color: var(--text); margin-left: auto; white-space: nowrap; }
+.storage-legend i { width: 9px; height: 9px; border-radius: 2px; flex: none; }
+.storage-legend li.note { font-size: 11px; display: block; }
+.storage-legend li.sep { border-top: 1px dashed var(--border); margin-top: 4px; padding-top: 5px; }
+:root[data-family="term"] .storage-head { text-transform: uppercase; letter-spacing: .08em; font-size: 11px; }
+
 .drop { position: fixed; inset: 0; background: color-mix(in srgb, var(--accent) 18%, transparent); border: 3px dashed var(--accent); display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: 600; z-index: 10; pointer-events: none; }
 
 /* Phones and narrow windows: the menu becomes a drop-down above the view. */
