@@ -1616,8 +1616,15 @@ function onCallAudio(d, rms) {
   // Background noise when nobody talks; the agent's own voice leaking
   // into the mic while it speaks (echo cancellation removes most of it).
   if (c.state === "listening" && rms < c.floor * 2) c.floor = Math.min(0.03, Math.max(0.002, c.floor * 0.95 + rms * 0.05));
-  if (c.state === "speaking") c.echo = c.echo * 0.9 + rms * 0.1;
   const thr = Math.max(0.012, c.floor * 3, agentTalking ? c.echo * 2.5 : 0);
+  // Learn the echo level in the first moments of each reply (no
+  // interrupting then), afterwards only from sounds quieter than speech,
+  // so your own voice never counts as echo.
+  if (c.state === "speaking") {
+    c.spoken = (c.spoken || 0) + ms;
+    if (c.spoken < 600) { c.echo = Math.max(c.echo * 0.8 + rms * 0.2, c.floor); return; }
+    if (rms < thr) c.echo = c.echo * 0.95 + rms * 0.05;
+  }
   if (c.state === "hearing") {
     c.chunks.push(d);
     c.quiet = rms > thr ? 0 : c.quiet + ms;
@@ -1673,7 +1680,7 @@ async function endTurn() {
   const ag = currentAgent();
   c.abort = new AbortController();
   c.speaker = makeSpeaker(agentVoice(ag), {
-    onStart: () => { if (call === c && c.turn === turn) { c.echo = c.floor; callSay("speaking", "Speaking… (talk to interrupt)"); } },
+    onStart: () => { if (call === c && c.turn === turn) { c.echo = c.floor; c.spoken = 0; callSay("speaking", "Speaking… (talk to interrupt)"); } },
   });
   const speaker = c.speaker;
   await send(text, {
