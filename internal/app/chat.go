@@ -226,6 +226,7 @@ func (a *App) Chat(req ChatRequest, ev ChatEvents) error {
 	default:
 		msgs = append(msgs, llama.Message{Role: "user", Content: userText})
 	}
+	userIdx := len(msgs) - 1 // history is msgs[1:userIdx]
 
 	var answer strings.Builder
 	thinking := false
@@ -269,6 +270,16 @@ func (a *App) Chat(req ChatRequest, ev ChatEvents) error {
 		before := answer.Len()
 		var calls []llama.ToolCall
 		calls, err = llama.ChatStream(turnCtx, url, msgs, opts, onDelta)
+		// Our token count is an estimate; if the request still doesn't
+		// fit, drop the oldest history or shorten the longest text and
+		// try again rather than fail the turn.
+		for tries := 0; isContextOverflow(err) && answer.Len() == before && tries < 8; tries++ {
+			var ok bool
+			if msgs, userIdx, ok = shrinkMessages(msgs, userIdx); !ok {
+				break
+			}
+			calls, err = llama.ChatStream(turnCtx, url, msgs, opts, onDelta)
+		}
 		if err != nil || len(calls) == 0 {
 			break
 		}
@@ -295,7 +306,10 @@ func (a *App) Chat(req ChatRequest, ev ChatEvents) error {
 			if err = ev.ToolResult(ts); err != nil {
 				break
 			}
-			msgs = append(msgs, llama.Message{Role: "tool", ToolCallID: call.ID, Content: result})
+			// Keep the tool result within the room left in the context
+			// window, so several long results can't overflow it.
+			room := ctxTokens - replyReserve - 150*len(tools) - len(images)*imageTokens - msgTokens(msgs)
+			msgs = append(msgs, llama.Message{Role: "tool", ToolCallID: call.ID, Content: fitTokens(result, room)})
 		}
 		if err != nil {
 			break
@@ -590,4 +604,66 @@ func preview(s string) string {
 		return string(r[:excerptPreview]) + "…"
 	}
 	return string(r)
+}
+
+// msgTokens estimates the tokens in msgs, erring high: approxTokens counts
+// about 4 characters per token, but documents and web pages often tokenize
+// more densely.
+func msgTokens(msgs []llama.Message) int {
+	n := 0
+	for _, m := range msgs {
+		n += 8
+		switch c := m.Content.(type) {
+		case string:
+			n += approxTokens(c)
+		case []llama.Part:
+			for _, p := range c {
+				n += approxTokens(p.Text)
+				if p.ImageURL != nil {
+					n += imageTokens
+				}
+			}
+		}
+		for _, tc := range m.ToolCalls {
+			n += approxTokens(tc.Function.Name+tc.Function.Arguments) + 10
+		}
+	}
+	return n * 5 / 4
+}
+
+const cutNote = "\n…(cut short to fit the model's context window)"
+
+// fitTokens shortens s to about room tokens, keeping at least a little of
+// it so the model knows what the tool returned.
+func fitTokens(s string, room int) string {
+	room = max(room, 150)
+	if approxTokens(s) <= room {
+		return s
+	}
+	r := []rune(s)
+	return string(r[:min(len(r), room*3)]) + cutNote
+}
+
+// shrinkMessages makes a request smaller after the model server refused it
+// as too long: first the oldest history (a user/assistant pair at a time),
+// then the longest text in this turn is halved. It returns the new user
+// message index and false when nothing is left to shrink.
+func shrinkMessages(msgs []llama.Message, userIdx int) ([]llama.Message, int, bool) {
+	if userIdx > 1 {
+		n := min(2, userIdx-1)
+		msgs = append(msgs[:1], msgs[1+n:]...)
+		return msgs, userIdx - n, true
+	}
+	longest, size := -1, 0
+	for i := userIdx; i < len(msgs); i++ {
+		if c, ok := msgs[i].Content.(string); ok && len(c) > size {
+			longest, size = i, len(c)
+		}
+	}
+	if longest < 0 || size < 800 {
+		return msgs, userIdx, false
+	}
+	r := []rune(strings.TrimSuffix(msgs[longest].Content.(string), cutNote))
+	msgs[longest].Content = string(r[:len(r)/2]) + cutNote
+	return msgs, userIdx, true
 }

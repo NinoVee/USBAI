@@ -212,6 +212,12 @@
         <select id="vision-select" aria-label="Image reader"></select>
         <span id="vision-status" class="muted"></span>
       </div>
+      <h3>Memory for long chats</h3>
+      <p class="muted">How much the model can read at once (the "context window", in tokens): your conversation, file excerpts, web pages and tool results together. Bigger lets agents work with longer documents and keeps more of the chat in mind, but uses more memory and each reply starts a little slower. Automatic picks the biggest that fits this computer.</p>
+      <div class="vision-row">
+        <select id="context-select" aria-label="Context window"></select>
+        <span id="context-status" class="muted"></span>
+      </div>
       <h3>Faster loading</h3>
       <label class="toggle"><input type="checkbox" id="cache-on"> Keep a copy of models on this computer</label>
       <p class="muted">USB drives are slow to read, so big models can take a minute or more to load. With this on, each model is copied to this computer's internal disk after it first loads, and later loads read from there, typically several times faster. Only the public AI model files are copied — never your chats, documents or memory. Uses up to 40 GB of this computer's disk.</p>

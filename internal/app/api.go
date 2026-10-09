@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -53,6 +54,27 @@ func (a *App) Handler(ui fs.FS, port int) http.Handler {
 			return
 		}
 		go a.startVision()
+		writeJSON(w, map[string]bool{"ok": true})
+	})
+	mux.HandleFunc("POST /api/context", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Size int `json:"size"` // 0 automatic, or one of contextChoices
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			httpError(w, err)
+			return
+		}
+		if body.Size != 0 && !slices.Contains(contextChoices, body.Size) {
+			httpError(w, fmt.Errorf("unsupported context size %d", body.Size))
+			return
+		}
+		s := a.loadSettings()
+		s.ContextSize = body.Size
+		if err := a.saveSettings(s); err != nil {
+			httpError(w, err)
+			return
+		}
+		go a.startChat() // reload the chat model with the new window
 		writeJSON(w, map[string]bool{"ok": true})
 	})
 	mux.HandleFunc("POST /api/cache", func(w http.ResponseWriter, r *http.Request) {
@@ -338,6 +360,8 @@ func (a *App) handleStatus(w http.ResponseWriter, r *http.Request) {
 		(a.visionState == StateReady && a.vision != nil && a.vision.Alive())
 	st["vision_choice"] = a.loadSettings().VisionModel
 	st["cache_on"] = a.loadSettings().CacheModels
+	st["context_choice"] = a.loadSettings().ContextSize
+	st["context_choices"] = contextChoices
 	a.engMu.Unlock()
 
 	var models []modelInfo

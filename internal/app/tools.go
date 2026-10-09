@@ -161,7 +161,17 @@ func toolDefs(names []string) []llama.Tool {
 	return out
 }
 
-const toolResultLimit = 6000 // characters returned to the model per call
+const toolResultLimit = 6000 // characters returned to the model per call, at least
+
+// resultLimit is the characters one tool call may return: about a quarter
+// of the context window, so bigger windows let agents read more at once.
+func (a *App) resultLimit() int {
+	limit := toolResultLimit
+	if _, m, ok := a.chatEngine(); ok {
+		limit = max(limit, m.Context)
+	}
+	return limit
+}
 
 // runTool executes one tool call for an agent and returns the text result
 // given back to the model. Errors are returned as text too, so the model can
@@ -240,8 +250,8 @@ func (a *App) runTool(ctx context.Context, ev ChatEvents, ag *Agent, call llama.
 	if err != nil {
 		return "Error: " + err.Error()
 	}
-	if r := []rune(out); len(r) > toolResultLimit {
-		out = string(r[:toolResultLimit]) + "\n…(truncated)"
+	if limit, r := a.resultLimit(), []rune(out); len(r) > limit {
+		out = string(r[:limit]) + "\n…(truncated)"
 	}
 	return out
 }
@@ -301,7 +311,7 @@ func (a *App) toolSearch(ag *Agent, query string) (string, error) {
 	if len(results) == 0 {
 		return "No matching passages found.", nil
 	}
-	text, _ := formatExcerpts(results, toolResultLimit/4)
+	text, _ := formatExcerpts(results, a.resultLimit()/4)
 	return text, nil
 }
 
@@ -583,8 +593,8 @@ func callFunc(name string, args []float64) (float64, error) {
 }
 
 func (a *App) limitResult(out string) string {
-	if r := []rune(out); len(r) > toolResultLimit {
-		return string(r[:toolResultLimit]) + "\n…(truncated)"
+	if limit, r := a.resultLimit(), []rune(out); len(r) > limit {
+		return string(r[:limit]) + "\n…(truncated)"
 	}
 	return out
 }

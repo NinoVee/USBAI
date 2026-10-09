@@ -1103,6 +1103,18 @@ function renderSettings() {
     error: `Failed: ${st.vision_error}`, off: `Not running — ${st.vision_error || "off"}` }[st.vision_state] || "";
   $("vision-status").textContent = vs;
 
+  // Context window.
+  const cx = $("context-select");
+  if (document.activeElement !== cx) {
+    const k = (n) => `${n / 1024}K tokens`;
+    cx.replaceChildren(el("option", { value: "0" }, "Automatic (recommended)"),
+      ...(st.context_choices || []).map((n) => el("option", { value: String(n) }, k(n) + (n >= 32768 ? " — long documents" : n <= 8192 ? " — least memory" : ""))));
+    cx.value = String(st.context_choice || 0);
+  }
+  $("context-status").textContent = st.context_size
+    ? `${st.chat_model || "The model"} ${st.chat_state === "ready" ? "is using" : "will use"} ${(st.context_size / 1024).toFixed(0)}K tokens (about ${Math.round(st.context_size * 0.75 / 1000)}K words)`
+    : "";
+
   // Model cache.
   $("cache-on").checked = !!st.cache_on;
   const gb = (st.cache_bytes || 0) / 2 ** 30;
@@ -1165,6 +1177,12 @@ async function clearCache() {
 $("cache-clear").addEventListener("click", clearCache);
 $("vision-select").addEventListener("change", async (e) => {
   await api("POST", "/api/vision/select", { id: e.target.value });
+  e.target.blur();
+  refreshStatus();
+});
+$("context-select").addEventListener("change", async (e) => {
+  // Changing the window reloads the chat model.
+  await api("POST", "/api/context", { size: Number(e.target.value) });
   e.target.blur();
   refreshStatus();
 });

@@ -17,7 +17,7 @@ func main() {
 	embedding := flag.Bool("embedding", false, "")
 	model := flag.String("model", "", "")
 	flag.String("host", "", "")
-	flag.Int("ctx-size", 0, "")
+	ctxSize := flag.Int("ctx-size", 0, "")
 	flag.Int("n-gpu-layers", 0, "")
 	flag.Int("batch-size", 0, "")
 	flag.Int("ubatch-size", 0, "")
@@ -75,6 +75,20 @@ func main() {
 			ToolChoice string `json:"tool_choice"`
 		}
 		json.NewDecoder(r.Body).Decode(&req)
+		// Refuse requests longer than the context window like llama-server
+		// does, counting text more densely than the app's own estimate.
+		tokens := 0
+		for _, m := range req.Messages {
+			tokens += 4
+			if len(m.Content) > 0 && m.Content[0] == '"' { // text; not images or audio
+				tokens += len(m.Content) / 3
+			}
+		}
+		if *ctxSize > 0 && tokens > *ctxSize {
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprintf(w, `{"error":{"code":400,"message":"request (%d tokens) exceeds the available context size (%d tokens), try increasing it","type":"exceed_context_size_error","n_prompt_tokens":%d,"n_ctx":%d}}`, tokens, *ctxSize, tokens, *ctxSize)
+			return
+		}
 		lastMsg := req.Messages[len(req.Messages)-1]
 		// Content is a string, or parts when images are attached.
 		var last string

@@ -190,6 +190,26 @@ in the theme's colours, inspired by the Apple Watch pairing animation. It
 gathers when the call connects, drifts while listening, follows your voice,
 swirls while thinking and pulses with the agent's voice.
 
+### Memory for long chats (context window)
+
+The context window is how much the model can read at once: the
+conversation, file excerpts, web pages and tool results together, measured
+in tokens (a token is about ¾ of a word). **Settings → Memory for long
+chats** offers Automatic (recommended), 8K, 16K or 32K tokens.
+
+Automatic picks the biggest window that fits beside the model, the system,
+the browser and an image reader: 32K for the 4B and 8B models on a 24 GB
+Mac, 16K for gpt-oss-20b, and 16K for small models on 16 GB. A bigger
+window needs more memory (about 160 KB per token) and each reply starts a
+little later, because the model reads everything in it first; it doesn't
+make answers faster. Changing it reloads the model.
+
+Agents can't overflow the window: tool results are cut to the room left,
+and if the model server still says a request is too long, the oldest
+history is dropped (then the longest text shortened) and the request is
+retried. Bigger windows also let each tool call return more text (about a
+quarter of the window).
+
 ### Faster loading (model cache)
 
 Load time is mostly the drive reading the model file, which can be 7–9 GB.

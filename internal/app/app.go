@@ -127,6 +127,8 @@ type settings struct {
 	VisionModel string `json:"vision_model,omitempty"`
 	// CacheModels keeps copies of models on the host for faster loading.
 	CacheModels bool `json:"cache_models,omitempty"`
+	// ContextSize is the chat model's context window in tokens; 0 is automatic.
+	ContextSize int `json:"context_size,omitempty"`
 }
 
 func (a *App) loadSettings() settings {
@@ -186,6 +188,9 @@ func (a *App) chatCandidates() (cands []config.Model, problems []string) {
 	sort.SliceStable(rest, func(i, j int) bool { return rest[i].MinRAMGB < rest[j].MinRAMGB })
 	for _, m := range rest {
 		add(m)
+	}
+	for i := range cands {
+		cands[i].Context = a.chatContext(cands[i])
 	}
 	return cands, problems
 }
@@ -428,7 +433,7 @@ func (a *App) pickVisionHelper(chat config.Model) (config.Model, string) {
 	sort.SliceStable(usable, func(i, j int) bool { return usable[i].Size+usable[i].MMProjSize < usable[j].Size+usable[j].MMProjSize })
 	// Both models must fit in memory next to the system and the browser;
 	// otherwise the system kills one of them.
-	if need := chat.Size + usable[0].Size + usable[0].MMProjSize + memHeadroom; a.host.RAMBytes > 0 && chat.Size > 0 && need > int64(a.host.RAMBytes) {
+	if need := chat.Size + kvBytes(chat.Context) + usable[0].Size + usable[0].MMProjSize + memHeadroom; a.host.RAMBytes > 0 && chat.Size > 0 && need > int64(a.host.RAMBytes) {
 		return config.Model{}, fmt.Sprintf("%s and an image reader need about %d GB of memory together; this computer has %d GB. Choose an image reader in Settings to run one anyway",
 			chat.Name, (need+(1<<30)-1)>>30, a.host.RAMGB())
 	}
