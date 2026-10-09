@@ -185,7 +185,65 @@ function showLock() {
   $("pass").value = $("pass2").value = "";
   $("pass").focus();
   typeWake();
+  rain.start();
 }
+
+// Digital rain behind the unlock screen, in the theme's colours. It runs
+// only while the lock screen shows (and the window is visible), at about
+// 18 frames a second, and not at all with "reduce motion".
+const rain = (() => {
+  const canvas = $("rain");
+  const ctx = canvas.getContext("2d");
+  const glyphs = "ｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜﾝ0123456789Z:.=*+-<>|";
+  const size = 16;
+  let drops = [], timer = null, last = 0, color = "#00ff41", head = "#d8ffe0", w = 0, h = 0;
+  const reduced = () => window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const visible = () => !$("lock").classList.contains("hidden") && !document.hidden;
+
+  function resize() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    w = canvas.clientWidth; h = canvas.clientHeight;
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    drops = Array.from({ length: Math.ceil(w / size) }, (_, i) => drops[i] ?? Math.random() * -h / size);
+    const css = getComputedStyle(document.documentElement);
+    color = css.getPropertyValue("--accent").trim() || color;
+    head = css.getPropertyValue("--text-strong").trim() || css.getPropertyValue("--text").trim() || head;
+  }
+  function frame(t) {
+    timer = requestAnimationFrame(frame);
+    if (t - last < 55) return;
+    last = t;
+    // Fade what is already drawn, whatever the theme's background, so the
+    // glyphs leave trails.
+    ctx.globalCompositeOperation = "destination-out";
+    ctx.fillStyle = "rgba(0, 0, 0, 0.08)";
+    ctx.fillRect(0, 0, w, h);
+    ctx.globalCompositeOperation = "source-over";
+    ctx.font = `${size}px monospace`;
+    for (let i = 0; i < drops.length; i++) {
+      const y = drops[i] * size;
+      ctx.fillStyle = Math.random() < 0.04 ? head : color; // occasional bright head
+      ctx.fillText(glyphs[(Math.random() * glyphs.length) | 0], i * size, y);
+      if (y > h && Math.random() > 0.975) drops[i] = 0;
+      drops[i] += 1;
+    }
+  }
+  function start() {
+    if (timer || reduced() || !visible()) return;
+    resize();
+    timer = requestAnimationFrame(frame);
+  }
+  function stop() {
+    if (timer) cancelAnimationFrame(timer);
+    timer = null;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  }
+  addEventListener("resize", () => { if (timer) resize(); });
+  document.addEventListener("visibilitychange", () => { if (document.hidden) stop(); else start(); });
+  return { start, stop, recolor: () => { if (timer) resize(); } };
+})();
 
 $("lock-form").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -200,6 +258,7 @@ $("lock-form").addEventListener("submit", async (e) => {
     await api("POST", "/api/unlock", { passphrase: $("pass").value, create });
     $("pass").value = $("pass2").value = "";
     $("lock").classList.add("hidden");
+    rain.stop();
     $("tabs").classList.remove("hidden");
     await refreshStatus();
     await loadAgents();
@@ -1147,6 +1206,7 @@ function applyTheme() {
   document.documentElement.dataset.family = t === "classic" ? "plain" : "term";
   document.querySelectorAll(".theme-btn").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.themeChoice === t)));
   if (!$("lock").classList.contains("hidden")) typeWake();
+  rain.recolor();
 }
 document.querySelectorAll(".theme-btn").forEach((b) => b.addEventListener("click", () => {
   prefs.set("theme", b.dataset.themeChoice);

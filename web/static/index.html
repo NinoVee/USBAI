@@ -20,6 +20,7 @@
 
   <!-- Lock screen -->
   <section id="lock" class="screen hidden">
+    <canvas id="rain" aria-hidden="true"></canvas>
     <div class="card narrow">
       <p id="wake" class="wake" aria-hidden="true"></p>
       <h1 id="lock-title">Unlock</h1>
@@ -113,7 +114,7 @@
         </div>
         <form id="pc-form" class="inline-form">
           <input id="pc-workspace" autocomplete="off" placeholder="~/Documents/Private AI Workspace" aria-label="Workspace folder">
-          <button class="primary">Save folder</button>
+          <button>Save folder</button>
         </form>
         <p class="muted small">The <b>workspace folder</b> is the only place agents can read and write files. Reading there doesn't ask; creating or changing a file does.</p>
         <div class="web-row">

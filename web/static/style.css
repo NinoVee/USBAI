@@ -499,3 +499,13 @@ input[type=range] { padding: 0; }
 .approval-ok { color: var(--ok); font-weight: 600; }
 .approval-no { color: var(--danger); font-weight: 600; }
 .call-approval { max-width: 520px; width: 100%; text-align: left; }
+
+/* Computer access: the folder box and its button on one line */
+.card form#pc-form { flex-direction: row; gap: 8px; margin: 0; align-items: center; }
+#pc-form input { flex: 1; min-width: 0; }
+#pc-form button { flex: none; }
+
+/* Digital rain behind the unlock screen (only there) */
+#lock { position: relative; }
+#rain { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; opacity: .35; z-index: 0; }
+#lock .card { position: relative; z-index: 1; }

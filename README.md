@@ -167,6 +167,9 @@ choice is remembered in this browser:
   greeting.
 - **Classic**: the original light/dark look, which follows the system setting.
 
+The unlock screen shows **digital rain** in the theme's colours. It runs only
+while the unlock screen is open (and stops for "reduce motion").
+
 The sections (Chat, Agents, Files, Memory, Chats, Settings) are in a menu on
 the left that opens and closes like a drop-down; the choice is remembered. On
 a phone or narrow window the menu sits above the page and closes after you
