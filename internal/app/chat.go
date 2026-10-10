@@ -229,6 +229,66 @@ func (a *App) Chat(req ChatRequest, ev ChatEvents) error {
 	userIdx := len(msgs) - 1 // history is msgs[1:userIdx]
 
 	var answer strings.Builder
+
+	// A model with a fixed greeting (a persona catchphrase) opens its first
+	// reply in a chat with it, written here so it is always exact. The
+	// system prompt tells the model not to greet, but small models often do
+	// anyway, so the first words it writes are also stripped of a greeting
+	// to stop the catchphrase doubling up.
+	greetInjected := model.Greeting != "" && len(chat.Messages) == 0
+	if greetInjected {
+		lead := model.Greeting + "\n\n"
+		answer.WriteString(lead)
+		if err := ev.Token(lead); err != nil {
+			return err
+		}
+	}
+	// The model's output for one step is cleaned as it streams: a greeting
+	// it writes itself (on the first step, when the app already wrote one)
+	// is dropped, and banned catchphrases are removed. A rolling holdback
+	// keeps back the tail that a later token could still change.
+	banRe := avoidRegexp(model.Avoid)
+	hold := 0
+	if banRe != nil {
+		hold = avoidHold(model.Avoid)
+	}
+	var stepRaw strings.Builder
+	stepSent := 0
+	stepFirst := false // this step may carry a self-written greeting
+	cleanStep := func(raw string) string {
+		if stepFirst && greetInjected {
+			raw = dropLeadGreeting(raw)
+		}
+		if banRe != nil {
+			raw = banRe.ReplaceAllString(raw, "")
+		}
+		return raw
+	}
+	pushStep := func(final bool) error {
+		s := stepRaw.String()
+		// On the first step, wait for a line or enough text before emitting,
+		// so a leading greeting can be recognized and stripped whole.
+		if !final && stepFirst && greetInjected &&
+			!strings.Contains(s, "\n") && utf8.RuneCountInString(s) <= 48 {
+			return nil
+		}
+		rr := []rune(cleanStep(s))
+		keep := len(rr)
+		if !final {
+			keep -= hold
+		}
+		if keep <= stepSent {
+			return nil
+		}
+		chunk := string(rr[stepSent:keep])
+		stepSent = keep
+		if chunk == "" {
+			return nil
+		}
+		answer.WriteString(chunk)
+		return ev.Token(chunk)
+	}
+
 	thinking := false
 	onDelta := func(d llama.Delta) error {
 		if d.Reasoning != "" && !thinking {
@@ -240,19 +300,8 @@ func (a *App) Chat(req ChatRequest, ev ChatEvents) error {
 		if d.Content == "" {
 			return nil
 		}
-		answer.WriteString(d.Content)
-		return ev.Token(d.Content)
-	}
-
-	// A model with a fixed greeting (a persona catchphrase) opens its first
-	// reply in a chat with it, written here so it is always exact; the
-	// system prompt tells the model not to write it itself.
-	if model.Greeting != "" && len(chat.Messages) == 0 {
-		lead := model.Greeting + "\n\n"
-		answer.WriteString(lead)
-		if err := ev.Token(lead); err != nil {
-			return err
-		}
+		stepRaw.WriteString(d.Content)
+		return pushStep(false)
 	}
 
 	turnCtx := a.ctx
@@ -263,6 +312,9 @@ func (a *App) Chat(req ChatRequest, ev ChatEvents) error {
 	done := map[string]string{} // tool+args -> result, to catch repeat calls
 	repeated := false
 	for step := 0; ; step++ {
+		stepRaw.Reset()
+		stepSent = 0
+		stepFirst = step == 0
 		opts := llama.ChatOptions{Temperature: temperature}
 		if step < maxAgentSteps && !repeated {
 			opts.Tools = tools // the last round must answer in words
@@ -290,6 +342,11 @@ func (a *App) Chat(req ChatRequest, ev ChatEvents) error {
 				break
 			}
 			calls, err = llama.ChatStream(turnCtx, url, msgs, opts, onDelta)
+		}
+		// Commit any held-back text (greeting and bans cleaned) so it is
+		// part of the answer before it is read below.
+		if ferr := pushStep(true); ferr != nil && err == nil {
+			err = ferr
 		}
 		if err != nil || len(calls) == 0 {
 			break
@@ -335,7 +392,7 @@ func (a *App) Chat(req ChatRequest, ev ChatEvents) error {
 			ev.Token("\n\n")
 		}
 	}
-	reply := strings.TrimSpace(stripToolCalls(stripThink(answer.String())))
+	reply := tidyReply(stripToolCalls(stripThink(answer.String())))
 	if reply == "" && len(steps) > 0 && err == nil {
 		reply = "I couldn't finish an answer with my tools. Please try again or rephrase the question."
 	}
@@ -677,4 +734,84 @@ func shrinkMessages(msgs []llama.Message, userIdx int) ([]llama.Message, int, bo
 	r := []rune(strings.TrimSuffix(msgs[longest].Content.(string), cutNote))
 	msgs[longest].Content = string(r[:len(r)/2]) + cutNote
 	return msgs, userIdx, true
+}
+
+// reLeadGreeting matches a GANG-style greeting at the very start of the
+// model's own text ("Wat up homie?", optionally "Wat it do?"), with any
+// surrounding punctuation and trailing blank space, so it can be removed
+// when the app already wrote the greeting itself.
+var reLeadGreeting = regexp.MustCompile(`(?i)^[\s"'*]*w[h]?at'?s?\s+up(\s+homie)?\s*[?!.,]*(\s*,?\s*w[h]?at'?s?\s+it\s+do\s*[?!.,]*)?[\s"'*—-]*`)
+
+// dropLeadGreeting removes one leading greeting (and the blank line after
+// it) from s, leaving the rest of the reply untouched.
+func dropLeadGreeting(s string) string {
+	return reLeadGreeting.ReplaceAllString(s, "")
+}
+
+// avoidRegexp builds a matcher for banned words/phrases, including any
+// punctuation and spacing right around them, so removing one doesn't leave
+// a dangling comma. It returns nil when there is nothing to avoid.
+func avoidRegexp(avoid []string) *regexp.Regexp {
+	var parts []string
+	for _, p := range avoid {
+		if p = strings.TrimSpace(p); p != "" {
+			parts = append(parts, strings.ReplaceAll(regexp.QuoteMeta(p), " ", `\s+`))
+		}
+	}
+	if len(parts) == 0 {
+		return nil
+	}
+	phrase := `(?:` + strings.Join(parts, "|") + `)`
+	// Either a connector then the phrase (keep the sentence's own trailing
+	// punctuation), or the phrase on its own with its trailing punctuation
+	// and space removed. Case-insensitive.
+	return regexp.MustCompile(`(?i)(?:[ \t]*[,;:—-][ \t]*\b` + phrase + `\b|\b` + phrase + `\b[.!?,;]*[ \t]*)`)
+}
+
+// avoidHold is how many trailing runes to hold back while streaming so a
+// banned phrase split across tokens is caught before it is shown.
+func avoidHold(avoid []string) int {
+	n := 0
+	for _, p := range avoid {
+		if l := utf8.RuneCountInString(p); l > n {
+			n = l
+		}
+	}
+	return n + 6
+}
+
+// tidyReply collapses the blank space and repeated closing lines a small
+// model leaves behind, especially after a catchphrase is stripped out.
+func tidyReply(s string) string {
+	lines := strings.Split(s, "\n")
+	var out []string
+	for _, ln := range lines {
+		t := strings.TrimRight(ln, " \t")
+		// Drop a line left empty or bare punctuation by a removed phrase.
+		if strings.Trim(t, " \t.,!?;:—-") == "" {
+			t = ""
+		}
+		// Skip a blank line that follows another blank line.
+		if t == "" && len(out) > 0 && out[len(out)-1] == "" {
+			continue
+		}
+		// Skip a non-blank line identical to the previous non-blank one
+		// (duplicated sign-offs like "That's real spit." twice).
+		if t != "" {
+			for i := len(out) - 1; i >= 0; i-- {
+				if out[i] == "" {
+					continue
+				}
+				if strings.EqualFold(strings.TrimRight(out[i], " \t"), t) {
+					t = "\x00" // mark for removal
+				}
+				break
+			}
+		}
+		if t == "\x00" {
+			continue
+		}
+		out = append(out, t)
+	}
+	return strings.TrimSpace(strings.Join(out, "\n"))
 }

@@ -44,6 +44,9 @@ type Model struct {
 	// model's first reply in a chat, so the catchphrase is exact instead
 	// of left to a small model to reproduce.
 	Greeting string `json:"greeting,omitempty"`
+	// Avoid lists words or phrases to strip from the model's replies, for
+	// catchphrases a small model keeps using after being told not to.
+	Avoid []string `json:"avoid,omitempty"`
 	// Revision goes up when an entry on the template changes in a way that
 	// drives should pick up on update (e.g. a rewritten personality).
 	Revision int `json:"revision,omitempty"`

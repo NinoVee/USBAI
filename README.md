@@ -398,7 +398,14 @@ replaces the drive's older copy on the next update.
 An entry can also set `greeting`: the app writes that exact text as the first
 line of the model's first reply in each chat (and tells the model not to write
 it itself), so a catchphrase like GANG's is always word-for-word rather than
-left to a small model to reproduce.
+left to a small model to reproduce. If the model writes the greeting anyway, it
+is stripped from its output so the catchphrase never doubles up.
+
+An entry can set `avoid`: a list of words or phrases stripped from the model's
+replies, with the punctuation around them, for catchphrases a small model keeps
+using after being told not to (GANG uses it to drop "no cap"). The reply is
+also tidied afterwards — blank runs are collapsed and a repeated closing line is
+shown once.
 
 ### Damaged or incomplete model files
 

@@ -157,6 +157,10 @@ func main() {
 		reply := fmt.Sprintf("Got %d messages. ", len(req.Messages))
 		system := string(req.Messages[0].Content)
 		switch {
+		case strings.Contains(last, "greet-too"):
+			// Imitate a small model that writes its own greeting even
+			// though the system prompt told it not to.
+			reply = "Wat up homie? Wat it do?\nI'm just kickin' it, no cap.\nThat's real spit, no cap.\nThat's real spit, no cap."
 		case last == "[audio]":
 			reply = "language English<asr_text>Hello from the microphone."
 		case strings.Contains(system, "You are an OCR engine") && images > 0:

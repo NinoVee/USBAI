@@ -104,11 +104,30 @@ func TestContextOverflow(t *testing.T) {
 func TestFixedGreeting(t *testing.T) {
 	ts := newTestServerModels(t, []config.Model{{
 		ID: "gang", Name: "GANG", Role: "chat", File: "models/chat/vl.gguf",
-		Context: 8192, Greeting: "Wat up homie? Wat it do?",
+		Context: 8192, Greeting: "Wat up homie? Wat it do?", Avoid: []string{"no cap"},
 	}})
 	tr := ts.chat(map[string]any{"message": "hello"})
 	if !strings.HasPrefix(tr.answer, "Wat up homie? Wat it do?\n\n") {
 		t.Fatalf("first reply did not open with the greeting: %q", tr.answer)
+	}
+	// When the model writes its own greeting too, it is stripped so the
+	// catchphrase appears exactly once.
+	tr = ts.chat(map[string]any{"message": "greet-too please"})
+	if n := strings.Count(tr.answer, "Wat up homie?"); n != 1 {
+		t.Fatalf("greeting should appear once, got %d: %q", n, tr.answer)
+	}
+	if strings.Contains(strings.ToLower(tr.answer), "no cap") {
+		t.Fatalf("banned phrase not stripped: %q", tr.answer)
+	}
+	if !strings.Contains(tr.answer, "kickin' it") {
+		t.Fatalf("model answer lost: %q", tr.answer)
+	}
+	// The saved reply has duplicate sign-offs collapsed.
+	chats, _ := ts.a.Chats()
+	saved, _ := ts.a.GetChat(chats[0].ID)
+	last := saved.Messages[len(saved.Messages)-1].Content
+	if n := strings.Count(last, "That's real spit"); n != 1 {
+		t.Fatalf("duplicate sign-off not collapsed in saved reply, got %d: %q", n, last)
 	}
 	var meta struct {
 		ChatID string `json:"chat_id"`
@@ -118,5 +137,15 @@ func TestFixedGreeting(t *testing.T) {
 	tr = ts.chat(map[string]any{"chat_id": meta.ChatID, "message": "and again"})
 	if strings.Contains(tr.answer, "Wat up homie?") {
 		t.Fatalf("greeting repeated on a later turn: %q", tr.answer)
+	}
+}
+
+func TestAvoidAndTidy(t *testing.T) {
+	re := avoidRegexp([]string{"no cap"})
+	if got := re.ReplaceAllString("I'm chillin', no cap. For real", ""); got != "I'm chillin'. For real" {
+		t.Errorf("strip: %q", got)
+	}
+	if got := tidyReply("Line one.\n\n\nThat's real spit.\nThat's real spit."); got != "Line one.\n\nThat's real spit." {
+		t.Errorf("tidy: %q", got)
 	}
 }
