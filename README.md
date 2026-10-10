@@ -386,13 +386,19 @@ rhyming and punchline-heavy, with its own slang (bread/cake = money, cap =
 lying, that slaps = good music, and so on). Under the style the answers stay
 articulate, detailed and accurate — numbers, quotes and code are never bent
 for a rhyme — and formal documents are written clean, with the flavor kept to
-a line before and after. It answers adult questions frankly without
-lecturing, and only declines requests that would seriously help someone hurt
-people. Choose it in Settings → Model. To change GANG's voice, edit its
-`persona` in `config.json` on the drive (and restart), or copy the entry with
-a new `id` to make another personality. When a personality's `persona` is
-rewritten here, bump its `revision` number so `sync-config` (and
-`update-drive.sh`) replaces the drive's older copy on the next update.
+a line before and after. It opens every chat with its catchphrase, "Wat up
+homie? Wat it do?". It answers adult questions frankly without lecturing, and
+only declines requests that would seriously help someone hurt people. Choose
+it in Settings → Model. To change GANG's voice, edit its `persona` in
+`config.json` on the drive (and restart), or copy the entry with a new `id`
+to make another personality. When a personality's `persona` is rewritten
+here, bump its `revision` number so `sync-config` (and `update-drive.sh`)
+replaces the drive's older copy on the next update.
+
+An entry can also set `greeting`: the app writes that exact text as the first
+line of the model's first reply in each chat (and tells the model not to write
+it itself), so a catchphrase like GANG's is always word-for-word rather than
+left to a small model to reproduce.
 
 ### Damaged or incomplete model files
 

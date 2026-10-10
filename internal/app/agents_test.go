@@ -59,6 +59,10 @@ type testServer struct {
 }
 
 func newTestServer(t *testing.T) *testServer {
+	return newTestServerModels(t, []config.Model{{ID: "vl", Name: "VL", Role: "chat", File: "models/chat/vl.gguf", MMProj: "models/chat/mmproj.gguf", Context: 8192}})
+}
+
+func newTestServerModels(t *testing.T, models []config.Model) *testServer {
 	t.Helper()
 	root := t.TempDir()
 	host := platform.Detect()
@@ -73,7 +77,7 @@ func newTestServer(t *testing.T) *testServer {
 	}
 	cfg := config.Default()
 	cfg.Root = root
-	cfg.Models = []config.Model{{ID: "vl", Name: "VL", Role: "chat", File: "models/chat/vl.gguf", MMProj: "models/chat/mmproj.gguf", Context: 8192}}
+	cfg.Models = models
 	a := New(cfg, host, io.Discard)
 	t.Cleanup(a.Stop)
 	a.StartEngines()

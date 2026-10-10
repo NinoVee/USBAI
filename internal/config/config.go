@@ -40,6 +40,10 @@ type Model struct {
 	// base model's files, and Persona is added to the system prompt.
 	Base    string `json:"base,omitempty"`
 	Persona string `json:"persona,omitempty"`
+	// Greeting, when set, is written verbatim as the first line of the
+	// model's first reply in a chat, so the catchphrase is exact instead
+	// of left to a small model to reproduce.
+	Greeting string `json:"greeting,omitempty"`
 	// Revision goes up when an entry on the template changes in a way that
 	// drives should pick up on update (e.g. a rewritten personality).
 	Revision int `json:"revision,omitempty"`

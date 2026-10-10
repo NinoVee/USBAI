@@ -244,6 +244,17 @@ func (a *App) Chat(req ChatRequest, ev ChatEvents) error {
 		return ev.Token(d.Content)
 	}
 
+	// A model with a fixed greeting (a persona catchphrase) opens its first
+	// reply in a chat with it, written here so it is always exact; the
+	// system prompt tells the model not to write it itself.
+	if model.Greeting != "" && len(chat.Messages) == 0 {
+		lead := model.Greeting + "\n\n"
+		answer.WriteString(lead)
+		if err := ev.Token(lead); err != nil {
+			return err
+		}
+	}
+
 	turnCtx := a.ctx
 	if req.ctx != nil {
 		turnCtx = req.ctx

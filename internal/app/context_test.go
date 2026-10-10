@@ -98,3 +98,25 @@ func TestContextOverflow(t *testing.T) {
 		t.Fatal("no answer")
 	}
 }
+
+// A model with a fixed Greeting opens its first reply in a chat with that
+// exact text, and does not repeat it on later turns.
+func TestFixedGreeting(t *testing.T) {
+	ts := newTestServerModels(t, []config.Model{{
+		ID: "gang", Name: "GANG", Role: "chat", File: "models/chat/vl.gguf",
+		Context: 8192, Greeting: "Wat up homie? Wat it do?",
+	}})
+	tr := ts.chat(map[string]any{"message": "hello"})
+	if !strings.HasPrefix(tr.answer, "Wat up homie? Wat it do?\n\n") {
+		t.Fatalf("first reply did not open with the greeting: %q", tr.answer)
+	}
+	var meta struct {
+		ChatID string `json:"chat_id"`
+	}
+	json.Unmarshal(tr.events["meta"][0], &meta)
+
+	tr = ts.chat(map[string]any{"chat_id": meta.ChatID, "message": "and again"})
+	if strings.Contains(tr.answer, "Wat up homie?") {
+		t.Fatalf("greeting repeated on a later turn: %q", tr.answer)
+	}
+}
