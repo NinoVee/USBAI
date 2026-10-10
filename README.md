@@ -381,12 +381,18 @@ it with `go run ./cmd/drivetool fetch-models -drive "/Volumes/GANG AI"`
 A model entry can be a *personality* of another model: it sets `base` to that
 model's id and adds a `persona`, which is appended to the system prompt. It
 uses the base model's files, so it costs no disk space. **GANG** is built
-this way on Qwen3-VL 4B: an urban, hip-hop voice that stays articulate,
-detailed and accurate, answers adult questions frankly without lecturing,
-and only declines requests that would seriously help someone hurt people.
-Choose it in Settings → Model. To change GANG's voice, edit its `persona` in
-`config.json` on the drive (and restart), or copy the entry with a new `id`
-to make another personality.
+this way on Qwen3-VL 4B: an urban hip-hop rap voice, sassy and streetwise,
+rhyming and punchline-heavy, with its own slang (bread/cake = money, cap =
+lying, that slaps = good music, and so on). Under the style the answers stay
+articulate, detailed and accurate — numbers, quotes and code are never bent
+for a rhyme — and formal documents are written clean, with the flavor kept to
+a line before and after. It answers adult questions frankly without
+lecturing, and only declines requests that would seriously help someone hurt
+people. Choose it in Settings → Model. To change GANG's voice, edit its
+`persona` in `config.json` on the drive (and restart), or copy the entry with
+a new `id` to make another personality. When a personality's `persona` is
+rewritten here, bump its `revision` number so `sync-config` (and
+`update-drive.sh`) replaces the drive's older copy on the next update.
 
 ### Damaged or incomplete model files
 

@@ -791,11 +791,15 @@ func syncConfig(drive, template string) error {
 	// user's version of each existing entry; then the user's own models.
 	var merged []map[string]any
 	seen := map[string]bool{}
-	var added []string
+	var added, updated []string
 	for _, m := range tmplModels {
 		id := fmt.Sprint(m["id"])
 		seen[id] = true
-		if old, ok := byID[id]; ok {
+		if old, ok := byID[id]; ok && revision(m) > revision(old) {
+			// The template's entry was revised: it replaces the drive's.
+			merged = append(merged, m)
+			updated = append(updated, id)
+		} else if ok {
 			// Keep the user's entry but pick up newly introduced fields.
 			for k, v := range m {
 				if _, has := old[k]; !has {
@@ -825,7 +829,7 @@ func syncConfig(drive, template string) error {
 			merged = append(merged, m)
 		}
 	}
-	if len(added) == 0 && len(removed) == 0 {
+	if len(added) == 0 && len(removed) == 0 && len(updated) == 0 {
 		fmt.Println("config.json already has every model")
 	}
 	b, _ := json.Marshal(merged)
@@ -839,6 +843,9 @@ func syncConfig(drive, template string) error {
 	}
 	if len(added) > 0 {
 		fmt.Printf("config.json: added %s\n", strings.Join(added, ", "))
+	}
+	if len(updated) > 0 {
+		fmt.Printf("config.json: updated %s\n", strings.Join(updated, ", "))
 	}
 	if len(removed) > 0 {
 		fmt.Printf("config.json: removed %s\n", strings.Join(removed, ", "))
@@ -1014,4 +1021,10 @@ func check(drive string) error {
 		fmt.Printf("  %-20s %s\n", b, mark)
 	}
 	return nil
+}
+
+// revision reads a config entry's revision number (0 when absent).
+func revision(m map[string]any) int {
+	n, _ := m["revision"].(float64)
+	return int(n)
 }

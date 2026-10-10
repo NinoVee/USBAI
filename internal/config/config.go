@@ -40,6 +40,9 @@ type Model struct {
 	// base model's files, and Persona is added to the system prompt.
 	Base    string `json:"base,omitempty"`
 	Persona string `json:"persona,omitempty"`
+	// Revision goes up when an entry on the template changes in a way that
+	// drives should pick up on update (e.g. a rewritten personality).
+	Revision int `json:"revision,omitempty"`
 	// Prefixes some embedding models (e.g. nomic-embed) expect.
 	QueryPrefix    string `json:"query_prefix,omitempty"`
 	DocumentPrefix string `json:"document_prefix,omitempty"`
