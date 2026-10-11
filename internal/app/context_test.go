@@ -149,3 +149,27 @@ func TestAvoidAndTidy(t *testing.T) {
 		t.Errorf("tidy: %q", got)
 	}
 }
+
+// The appearance is saved on the drive and returned in status, so it
+// survives restarts regardless of the browser.
+func TestThemePersists(t *testing.T) {
+	ts := newTestServer(t)
+	var st map[string]any
+	ts.call("GET", "/api/status", nil, &st)
+	if st["theme"] != "" {
+		t.Fatalf("theme should start empty: %v", st["theme"])
+	}
+	if code := ts.call("POST", "/api/theme", map[string]string{"theme": "prometheus"}, nil); code != 200 {
+		t.Fatalf("save theme: %d", code)
+	}
+	if got := ts.a.loadSettings().Theme; got != "prometheus" {
+		t.Fatalf("theme not saved: %q", got)
+	}
+	ts.call("GET", "/api/status", nil, &st)
+	if st["theme"] != "prometheus" {
+		t.Fatalf("status theme: %v", st["theme"])
+	}
+	if code := ts.call("POST", "/api/theme", map[string]string{"theme": strings.Repeat("x", 50)}, nil); code == 200 {
+		t.Fatal("overly long theme accepted")
+	}
+}

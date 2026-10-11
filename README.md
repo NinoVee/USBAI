@@ -154,7 +154,11 @@ Image reader**.
 ### Appearance
 
 Pick a theme with the toggle buttons under **Settings → Appearance**. The
-choice is remembered in this browser:
+choice is saved on the drive (in `data/settings.json`, not the vault, so it
+applies before unlocking), so GANG AI starts with it every time — on any
+computer or browser, and even if the port changes or the browser cache is
+cleared. The app still keeps a copy in the browser for an instant first paint,
+then matches the drive's saved choice:
 
 - **Matrix** (default): green on black with terminal type, and a "Wake up…"
   greeting on the unlock screen.

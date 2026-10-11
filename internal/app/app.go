@@ -129,6 +129,8 @@ type settings struct {
 	CacheModels bool `json:"cache_models,omitempty"`
 	// ContextSize is the chat model's context window in tokens; 0 is automatic.
 	ContextSize int `json:"context_size,omitempty"`
+	// Theme is the saved appearance (e.g. "matrix"); "" lets the UI choose.
+	Theme string `json:"theme,omitempty"`
 }
 
 func (a *App) loadSettings() settings {

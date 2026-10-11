@@ -109,6 +109,12 @@ async function refreshStatus() {
   try {
     const st = await (await fetch("/api/status", { headers: H })).json();
     state.status = st;
+    // The drive remembers the appearance across restarts, browsers and
+    // ports, so apply its saved choice when it differs from this browser's.
+    if (st.theme && THEMES.includes(st.theme) && st.theme !== theme()) {
+      prefs.set("theme", st.theme);
+      applyTheme();
+    }
     const pill = $("engine");
     pill.className = "pill";
     if (st.chat_state === "ready") {
@@ -1229,6 +1235,8 @@ function applyTheme() {
 document.querySelectorAll(".theme-btn").forEach((b) => b.addEventListener("click", () => {
   prefs.set("theme", b.dataset.themeChoice);
   applyTheme();
+  // Save on the drive too, so it sticks every time GANG AI starts.
+  api("POST", "/api/theme", { theme: b.dataset.themeChoice }).catch(() => {});
 }));
 applyTheme();
 // Wide windows use the remembered choice; narrow ones start closed.

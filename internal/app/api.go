@@ -56,6 +56,26 @@ func (a *App) Handler(ui fs.FS, port int) http.Handler {
 		go a.startVision()
 		writeJSON(w, map[string]bool{"ok": true})
 	})
+	mux.HandleFunc("POST /api/theme", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Theme string `json:"theme"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			httpError(w, err)
+			return
+		}
+		if len(body.Theme) > 40 {
+			httpError(w, errors.New("theme name too long"))
+			return
+		}
+		s := a.loadSettings()
+		s.Theme = body.Theme
+		if err := a.saveSettings(s); err != nil {
+			httpError(w, err)
+			return
+		}
+		writeJSON(w, map[string]bool{"ok": true})
+	})
 	mux.HandleFunc("POST /api/context", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			Size int `json:"size"` // 0 automatic, or one of contextChoices
@@ -361,6 +381,7 @@ func (a *App) handleStatus(w http.ResponseWriter, r *http.Request) {
 	st["vision_choice"] = a.loadSettings().VisionModel
 	st["cache_on"] = a.loadSettings().CacheModels
 	st["context_choice"] = a.loadSettings().ContextSize
+	st["theme"] = a.loadSettings().Theme
 	st["context_choices"] = contextChoices
 	a.engMu.Unlock()
 
