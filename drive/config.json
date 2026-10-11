@@ -123,6 +123,28 @@
       "context": 4096
     },
     {
+      "id": "qwen3-8b-uncensored",
+      "name": "Qwen3 8B abliterated (uncensored, no refusals)",
+      "role": "chat",
+      "file": "models/chat/Huihui-Qwen3-8B-abliterated-v2.Q4_K_M.gguf",
+      "url": "https://huggingface.co/mradermacher/Huihui-Qwen3-8B-abliterated-v2-GGUF/resolve/main/Huihui-Qwen3-8B-abliterated-v2.Q4_K_M.gguf",
+      "size": 5027780352,
+      "sha256": "0bdba3b32d450374b3c404d9ad531703db139b33798149efc84e2bce45eedbb5",
+      "min_ram_gb": 16,
+      "context": 8192
+    },
+    {
+      "id": "dolphin3-8b",
+      "name": "Dolphin 3.0 8B (uncensored assistant)",
+      "role": "chat",
+      "file": "models/chat/Dolphin3.0-Llama3.1-8B-Q4_K_M.gguf",
+      "url": "https://huggingface.co/bartowski/Dolphin3.0-Llama3.1-8B-GGUF/resolve/main/Dolphin3.0-Llama3.1-8B-Q4_K_M.gguf",
+      "size": 4920749472,
+      "sha256": "268390e07edd407ad93ea21a868b7ae995b5950e01cad0db9e1802ae5049d405",
+      "min_ram_gb": 12,
+      "context": 8192
+    },
+    {
       "id": "nomic-embed",
       "name": "Nomic Embed Text v1.5",
       "role": "embedding",

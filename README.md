@@ -356,6 +356,8 @@ laptop; the R1 distill below is the version that runs locally.
 | `gemma3-12b` | Gemma 3 12B Q4_K_M + mmproj F16, **sees images**, sharpest image reading | ~8.2 GB | 16 GB+ |
 | `deepseek-r1-8b` | DeepSeek R1 0528 (Qwen3 8B distill), reasons step by step; slow, and in testing it reasoned its way to a wrong answer on simple arithmetic, so treat it as optional | ~5.0 GB | 12 GB+ |
 | `qwen3-1.7b` | Qwen3 1.7B Q4_K_M | ~1.1 GB | 4 GB+ |
+| `qwen3-8b-uncensored` | Qwen3 8B **abliterated** (huihui-ai v2, MIT): refusals removed, same quality and speed as Qwen3 8B | ~5.0 GB | 16 GB+ |
+| `dolphin3-8b` | Dolphin 3.0 (Llama 3.1 8B, Llama-3.1 license): uncensored, steerable general assistant | ~4.9 GB | 12 GB+ |
 | `nomic-embed` | nomic-embed-text v1.5 Q8_0 | ~140 MB | — |
 | `qwen3-asr-0.6b` | Qwen3-ASR 0.6B Q8_0 + audio encoder, speech to text (Apache-2.0) | ~1.0 GB | 4 GB+ |
 | `kokoro` | Kokoro 82M (q8 for the processor, fp32 for WebGPU), 28 English voices, ONNX Runtime Web: natural voices (Apache-2.0) | ~455 MB | — |
