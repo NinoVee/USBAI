@@ -27,6 +27,7 @@ var storageCache struct {
 	sync.Mutex
 	report StorageReport
 	locked bool
+	root   string
 }
 
 func dirSize(dir string) int64 {
@@ -63,7 +64,7 @@ func (a *App) Storage() (StorageReport, error) {
 	locked := lockErr != nil
 	storageCache.Lock()
 	defer storageCache.Unlock()
-	if r := storageCache.report; !r.Checked.IsZero() && time.Since(r.Checked) < 15*time.Second && storageCache.locked == locked {
+	if r := storageCache.report; !r.Checked.IsZero() && time.Since(r.Checked) < 15*time.Second && storageCache.locked == locked && storageCache.root == a.cfg.Root {
 		return r, nil
 	}
 	total, free, err := platform.DiskSpace(a.cfg.Root)
@@ -93,7 +94,7 @@ func (a *App) Storage() (StorageReport, error) {
 		r.Parts["other"] = other
 	}
 	_, r.Cache = a.CacheStatus()
-	storageCache.report, storageCache.locked = r, locked
+	storageCache.report, storageCache.locked, storageCache.root = r, locked, a.cfg.Root
 	return r, nil
 }
 

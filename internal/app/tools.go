@@ -54,6 +54,10 @@ var toolCatalog = map[string]toolSpec{
 		Label:       "Date & time",
 		Description: "Get the current local date, time and weekday.",
 	},
+	"check_system": {
+		Label:       "🩺 Check system health",
+		Description: "Get a read-only health report of Private AI itself: drive space and what is using it, which engines (chat, document search, image reader, speech) are running or failed, and which chat models on the drive are ready, missing or damaged. Touches nothing.",
+	},
 	"remember": {
 		Label:       "Remember facts",
 		Description: "Save a lasting fact or preference about the user to memory, so every future conversation knows it.",
@@ -210,6 +214,8 @@ func (a *App) runTool(ctx context.Context, ev ChatEvents, ag *Agent, call llama.
 		}
 	case "get_datetime":
 		out = time.Now().Format("Monday, 2 January 2006, 15:04 MST")
+	case "check_system":
+		out = a.systemHealth()
 	case "remember":
 		if _, err = a.Remember(arg("fact")); err == nil {
 			out = "Saved to memory."

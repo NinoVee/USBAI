@@ -173,3 +173,45 @@ func TestThemePersists(t *testing.T) {
 		t.Fatal("overly long theme accepted")
 	}
 }
+
+// The Platform maintenance agent's check_system tool returns a read-only
+// health report, needs no approval, and never touches the computer.
+func TestCheckSystemTool(t *testing.T) {
+	ts := newTestServer(t)
+	a := ts.a
+	var ag Agent
+	ts.call("POST", "/api/agents", Agent{Name: "Maint", Knowledge: "none",
+		Tools: []string{"check_system", "create_note"}}, &ag)
+	// It is not a computer tool, so it is offered even with computer access off.
+	if tools := a.agentTools(&ag); len(tools) != 2 {
+		t.Fatalf("tools offered: %v", tools)
+	}
+	out := a.runTool(t.Context(), nil, &ag, toolCall("check_system", `{}`))
+	for _, want := range []string{"ENGINES", "Chat model", "STORAGE", "Drive:"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("health report missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "approve") || strings.Contains(out, "computer access is off") {
+		t.Fatalf("check_system should be read-only: %s", out)
+	}
+}
+
+// The new agent templates exist and are valid to save.
+func TestNewAgentTemplates(t *testing.T) {
+	a := newWebApp(t)
+	want := map[string]bool{"Coding Assistant": false, "Code Reviewer": false, "Platform Maintenance": false, "Security Watch": false}
+	for _, tpl := range AgentTemplates {
+		if _, ok := want[tpl.Name]; ok {
+			want[tpl.Name] = true
+			if _, err := a.SaveAgent(tpl); err != nil {
+				t.Errorf("save template %q: %v", tpl.Name, err)
+			}
+		}
+	}
+	for name, found := range want {
+		if !found {
+			t.Errorf("missing template %q", name)
+		}
+	}
+}

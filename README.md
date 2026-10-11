@@ -230,14 +230,42 @@ The **Agents** tab creates assistants with their own:
 
 - **instructions**: their role, focus and answer format
 - **tools**: search documents, read a document, list documents, calculator,
-  date & time, remember a fact, create a note (saved to Files)
+  date & time, remember a fact, create a note (saved to Files),
+  check system health, plus the optional web and computer tools below
 - **documents**: all files, selected files, or none
 - **creativity**: the model's temperature setting
 
 Pick an agent from the menu under the chat box, or start from a template:
-Research Assistant, Contract Reviewer, Note Taker, Math Tutor, Writing Coach.
+Research Assistant, Contract Reviewer, Note Taker, Math Tutor, Writing Coach,
+Web Researcher, Computer Assistant, and these four:
+
+- **Coding Assistant** (💻): builds apps, fixes bugs, writes scripts and
+  explains code inside the workspace folder. Uses the workspace file tools and
+  terminal, so it needs **Computer access** on (and the terminal switch).
+- **Code Reviewer** (🧐): reviews code in the workspace for bugs, security
+  issues and missing requirements, grouped Blocking / Should-fix / Nits. It is
+  read-only (list and read files only), so it needs Computer access on but not
+  the terminal, and it never edits — it proposes changes.
+- **Platform Maintenance** (🛠️): calls **check system health** — a read-only
+  report of drive space, which engines are running or failed, and which chat
+  models are ready, missing or damaged — explains it, and recommends fixes. It
+  touches nothing and needs no Computer access.
+- **Security Watch** (🛡️): runs read-only security checks on the Mac (firewall
+  status, running processes, recent downloads and their quarantine flags, open
+  listening ports) and explains the findings. For malware scanning it uses an
+  established engine — it runs ClamAV if you've installed it (`brew install
+  clamav`) and otherwise tells you how — and never quarantines, kills a process
+  or changes a setting without approval. Needs Computer access and the terminal
+  switch.
+
 Agents use llama.cpp's tool calling. The model may call tools for up to 6
 rounds before it must answer, and each answer shows the tools it used.
+
+> These agents run only while you're in the chat with them; GANG AI does not
+> yet run agents on a schedule, so anything that changes your computer still
+> asks for your Allow each time. There is no antivirus engine, backup system
+> or background jobs bundled in the app — the Security Watch agent uses an
+> engine you install, and Platform Maintenance reports on the app itself.
 
 Tools run in-process. Apart from the optional web tools below, they can't
 reach the internet. None of them can run programs or touch the host
