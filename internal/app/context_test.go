@@ -200,7 +200,7 @@ func TestCheckSystemTool(t *testing.T) {
 // The new agent templates exist and are valid to save.
 func TestNewAgentTemplates(t *testing.T) {
 	a := newWebApp(t)
-	want := map[string]bool{"Coding Assistant": false, "Code Reviewer": false, "Platform Maintenance": false, "Security Watch": false}
+	want := map[string]bool{"Coding Assistant": false, "Platform Maintenance": false, "Security Watch": false}
 	for _, tpl := range AgentTemplates {
 		if _, ok := want[tpl.Name]; ok {
 			want[tpl.Name] = true

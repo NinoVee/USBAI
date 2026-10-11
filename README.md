@@ -237,15 +237,11 @@ The **Agents** tab creates assistants with their own:
 
 Pick an agent from the menu under the chat box, or start from a template:
 Research Assistant, Contract Reviewer, Note Taker, Math Tutor, Writing Coach,
-Web Researcher, Computer Assistant, and these four:
+Web Researcher, Computer Assistant, and these three:
 
 - **Coding Assistant** (💻): builds apps, fixes bugs, writes scripts and
   explains code inside the workspace folder. Uses the workspace file tools and
   terminal, so it needs **Computer access** on (and the terminal switch).
-- **Code Reviewer** (🧐): reviews code in the workspace for bugs, security
-  issues and missing requirements, grouped Blocking / Should-fix / Nits. It is
-  read-only (list and read files only), so it needs Computer access on but not
-  the terminal, and it never edits — it proposes changes.
 - **Platform Maintenance** (🛠️): calls **check system health** — a read-only
   report of drive space, which engines are running or failed, and which chat
   models are ready, missing or damaged — explains it, and recommends fixes. It
