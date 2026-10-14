@@ -433,8 +433,8 @@ is stripped from its output so the catchphrase never doubles up.
 
 An entry can set `avoid`: a list of words or phrases stripped from the model's
 replies, with the punctuation around them, for catchphrases a small model keeps
-using after being told not to (GANG uses it to drop "no cap"). The reply is
-also tidied afterwards — blank runs are collapsed and a repeated closing line is
+using after being told not to (GANG uses it to drop "no cap" and "real spit").
+The reply is also tidied afterwards — blank runs are collapsed and a repeated closing line is
 shown once.
 
 ### Damaged or incomplete model files
