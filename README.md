@@ -378,7 +378,7 @@ laptop; the R1 distill below is the version that runs locally.
 | `gpt-oss-20b` | OpenAI gpt-oss 20B MXFP4 (Apache-2.0): mixture of experts, 21B parameters with about 3.6B active per word, so it reasons well and runs fast; thinks before answering; the default at 16 GB+ | ~12.1 GB | 16 GB+ |
 | `qwen3-8b` | Qwen3 8B Q4_K_M | ~5 GB | 16 GB+ |
 | `qwen3-vl-4b` | Qwen3-VL 4B Instruct Q4_K_M + mmproj Q8_0, **sees images** | ~2.9 GB | 8 GB+ |
-| `gang` | **GANG**: Qwen3-VL 4B with a hip-hop personality (no extra download) | — | 8 GB+ |
+| `gang` | **GANG**: Qwen3-VL 4B with a warrior-poet personality (no extra download) | — | 8 GB+ |
 | `qwen3-4b` | Qwen3 4B Instruct 2507 Q4_K_M | ~2.5 GB | 8 GB+ |
 | `qwen3-vl-2b` | Qwen3-VL 2B Instruct Q4_K_M + mmproj Q8_0, **sees images** | ~1.5 GB | 4 GB+ |
 | `gemma3-12b` | Gemma 3 12B Q4_K_M + mmproj F16, **sees images**, sharpest image reading | ~8.2 GB | 16 GB+ |
@@ -411,13 +411,17 @@ it with `go run ./cmd/drivetool fetch-models -drive "/Volumes/GANG AI"`
 A model entry can be a *personality* of another model: it sets `base` to that
 model's id and adds a `persona`, which is appended to the system prompt. It
 uses the base model's files, so it costs no disk space. **GANG** is built
-this way on Qwen3-VL 4B: an urban hip-hop rap voice, sassy and streetwise,
-rhyming and punchline-heavy, with its own slang (bread/cake = money, cap =
-lying, that slaps = good music, and so on). Under the style the answers stay
-articulate, detailed and accurate — numbers, quotes and code are never bent
-for a rhyme — and formal documents are written clean, with the flavor kept to
-a line before and after. It opens every chat with its catchphrase, "Wat up
-homie? Wat it do?". It answers adult questions frankly without lecturing, and
+this way on Qwen3-VL 4B: a street-wise *warrior-poet* voice — confident and
+rhythmic, with metaphors from chess, martial arts, the block and nature. It
+opens with a short image or story, then gets to the point. Its slang blends
+Bay Area and Southern flavor and is used sparingly. The persona includes a
+backstory and a few example exchanges, which help a small model hold the
+voice. Its tone shifts from hype to real to tender: it drops the swagger
+when someone is hurting, and gives a crisis line if someone may be in
+danger. Under the style the answers stay accurate — numbers, quotes and code
+are never bent for a rhyme — and formal documents are written clean, with
+the flavor kept to a line before and after. It answers adult questions
+frankly without lecturing, never glorifies violence, crime or drugs, and
 only declines requests that would seriously help someone hurt people. Choose
 it in Settings → Model. To change GANG's voice, edit its `persona` in
 `config.json` on the drive (and restart), or copy the entry with a new `id`
@@ -427,7 +431,7 @@ replaces the drive's older copy on the next update.
 
 An entry can also set `greeting`: the app writes that exact text as the first
 line of the model's first reply in each chat (and tells the model not to write
-it itself), so a catchphrase like GANG's is always word-for-word rather than
+it itself), so a catchphrase is always word-for-word rather than
 left to a small model to reproduce. If the model writes the greeting anyway, it
 is stripped from its output so the catchphrase never doubles up.
 
