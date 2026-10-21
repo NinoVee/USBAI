@@ -276,10 +276,10 @@ func (m *Manager) install(a *app) error {
 	env := m.env(c, tmp, 0, "")
 	env = append(env, "npm_config_cache="+filepath.Join(tmp, "home", ".npm"), "npm_config_update_notifier=false",
 		"PIP_CACHE_DIR="+filepath.Join(tmp, "home", ".cache", "pip"), "PIP_DISABLE_PIP_VERSION_CHECK=1")
-	if c.Source != "" {
-		m.say(a, "Downloading the source …")
-		if err := downloadExtract(c.Source, filepath.Join(tmp, c.SourceDir)); err != nil {
-			return fmt.Errorf("download %s: %w", c.Source, err)
+	for _, src := range c.Sources {
+		m.say(a, "Downloading "+src.URL+" …")
+		if err := downloadExtract(src.URL, filepath.Join(tmp, src.Dir)); err != nil {
+			return fmt.Errorf("download %s: %w", src.URL, err)
 		}
 	}
 	if c.Kind == "installer" {
@@ -320,11 +320,15 @@ func (m *Manager) install(a *app) error {
 			err = m.runLogged(a, dir, env, node, append([]string{npm}, st.Args...)...)
 		case "python":
 			err = m.runLogged(a, dir, env, py, st.Args...)
-		default: // a node script, relative to the install folder
+		default: // a node script relative to the install folder, or node options such as -e
 			if len(st.Args) == 0 {
 				continue
 			}
-			err = m.runLogged(a, dir, env, node, append([]string{filepath.Join(tmp, st.Args[0])}, st.Args[1:]...)...)
+			args := st.Args
+			if !strings.HasPrefix(args[0], "-") {
+				args = append([]string{filepath.Join(tmp, args[0])}, args[1:]...)
+			}
+			err = m.runLogged(a, dir, env, node, args...)
 		}
 		if err != nil {
 			return fmt.Errorf("setup step %q failed: %w", st.Run+" "+strings.Join(st.Args, " "), err)
@@ -343,7 +347,7 @@ func (m *Manager) install(a *app) error {
 		os.RemoveAll(partial)
 		return fmt.Errorf("copy to the drive: %w", err)
 	}
-	marker, _ := json.Marshal(map[string]any{"packages": c.Packages, "pip": c.Pip, "source": c.Source, "installed": time.Now().Format(time.RFC3339)})
+	marker, _ := json.Marshal(map[string]any{"packages": c.Packages, "pip": c.Pip, "sources": c.Sources, "installed": time.Now().Format(time.RFC3339)})
 	if err := os.WriteFile(filepath.Join(partial, markerFile), marker, 0o644); err != nil {
 		return err
 	}
@@ -503,10 +507,13 @@ func (m *Manager) Start(ctx context.Context, id string) error {
 		m.mu.Unlock()
 		return errors.New(a.cfg.Name + " is not installed for this computer yet — install it in the Apps tab")
 	}
-	port, err := freePort()
-	if err != nil {
-		m.mu.Unlock()
-		return err
+	port := a.cfg.Port
+	if port == 0 || !portFree(port) {
+		var err error
+		if port, err = freePort(); err != nil {
+			m.mu.Unlock()
+			return err
+		}
 	}
 	dir := m.dir(id)
 	// Each run starts clean: browsing data from the last run (kept under
@@ -729,6 +736,15 @@ func (m *Manager) OpenInstaller(id string) error {
 	return openFile(p)
 }
 
+func portFree(port int) bool {
+	l, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+	if err != nil {
+		return false
+	}
+	l.Close()
+	return true
+}
+
 func freePort() (int, error) {
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -751,13 +767,27 @@ func fileExists(p string) bool {
 
 // CopyTree copies src to dst, following symbolic links (so the copy holds
 // plain files, as exFAT needs) and leaving out paths skip matches. Broken
-// links are left out.
+// links are left out, and a link back into a folder being copied (a loop)
+// is copied only once.
 func CopyTree(src, dst string, skip func(rel string) bool) error {
-	return filepath.WalkDir(src, func(p string, d os.DirEntry, err error) error {
+	return copyTree(src, dst, skip, map[string]bool{})
+}
+
+func copyTree(src, dst string, skip func(rel string) bool, seen map[string]bool) error {
+	real, err := filepath.EvalSymlinks(src)
+	if err != nil {
+		return err
+	}
+	if seen[real] {
+		return nil
+	}
+	seen[real] = true
+	defer delete(seen, real)
+	return filepath.WalkDir(real, func(p string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		rel, _ := filepath.Rel(src, p)
+		rel, _ := filepath.Rel(real, p)
 		if rel != "." && skip != nil && skip(rel) {
 			if d.IsDir() {
 				return filepath.SkipDir
@@ -765,18 +795,24 @@ func CopyTree(src, dst string, skip func(rel string) bool) error {
 			return nil
 		}
 		target := filepath.Join(dst, rel)
-		st, err := os.Stat(p) // follows links
-		if err != nil {
-			return nil // broken link
-		}
-		if st.IsDir() {
-			if d.Type()&os.ModeSymlink != 0 {
-				// A link to a folder: copy what it points to.
-				return CopyTree(p, target, nil)
+		if d.Type()&os.ModeSymlink != 0 {
+			st, err := os.Stat(p) // what the link points to
+			if err != nil {
+				return nil // broken link
 			}
+			if st.IsDir() {
+				return copyTree(p, target, nil, seen)
+			}
+			return copyFile(p, target, st.Mode())
+		}
+		if d.IsDir() {
 			return os.MkdirAll(target, 0o755)
 		}
-		return copyFile(p, target, st.Mode())
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		return copyFile(p, target, info.Mode())
 	})
 }
 

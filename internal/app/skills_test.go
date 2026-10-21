@@ -45,7 +45,7 @@ func TestSkillPack(t *testing.T) {
 
 	cfg := config.Default()
 	cfg.Root = t.TempDir()
-	cfg.Apps = []config.App{{ID: "claude-ads", Name: "Claude Ads", Kind: "skills", Shared: true, Source: srv.URL + "/pack.tar.gz"}}
+	cfg.Apps = []config.App{{ID: "claude-ads", Name: "Claude Ads", Kind: "skills", Shared: true, Sources: []config.AppSource{{URL: srv.URL + "/pack.tar.gz"}}}}
 	a := New(cfg, platform.Detect(), os.Stderr)
 	defer a.Stop()
 	if a.appToolAvailable("read_skill") {

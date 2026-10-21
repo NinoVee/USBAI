@@ -586,6 +586,18 @@ func fetchNode(drive string, only map[string]bool) error {
 		if err := apps.CopyTree(inner, dest, skip); err != nil {
 			return fmt.Errorf("node %s: %w", t.Slug, err)
 		}
+		if !strings.HasPrefix(t.Slug, "windows") {
+			// bin/npm and bin/npx are links in the archive; as copies they
+			// can't find npm's files, so replace them with small scripts.
+			// (Windows has npm.cmd and npx.cmd, which already work.)
+			for name, cli := range map[string]string{"npm": "npm-cli.js", "npx": "npx-cli.js"} {
+				script := "#!/bin/sh\nd=$(dirname \"$0\")\nexec \"$d/node\" \"$d/../lib/node_modules/npm/bin/" + cli + "\" \"$@\"\n"
+				if err := os.WriteFile(filepath.Join(dest, "bin", name), []byte(script), 0o755); err != nil {
+					return err
+				}
+			}
+			os.Remove(filepath.Join(dest, "bin", "corepack"))
+		}
 		if err := os.WriteFile(filepath.Join(dest, "VERSION"), []byte(v+"\n"), 0o644); err != nil {
 			return err
 		}

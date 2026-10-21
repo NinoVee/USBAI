@@ -108,11 +108,10 @@ type App struct {
 	// Shared apps are installed once for every kind of computer
 	// (apps/<id>/shared) because nothing in them is system-specific.
 	Shared bool `json:"shared,omitempty"`
-	// Source is a .tar.gz of the app's source (e.g. a GitHub archive of a
-	// pinned commit), unpacked into the install folder (or SourceDir in it)
-	// without its top folder.
-	Source    string `json:"source,omitempty"`
-	SourceDir string `json:"source_dir,omitempty"`
+	// Sources are .tar.gz archives of the app's source (e.g. GitHub
+	// archives of pinned commits, one per git submodule), each unpacked
+	// into Dir in the install folder without its top folder.
+	Sources []AppSource `json:"sources,omitempty"`
 	// Packages are npm packages and Pip Python packages to install, with
 	// exact versions.
 	Packages []string `json:"packages,omitempty"`
@@ -125,6 +124,9 @@ type App struct {
 	Entry   string   `json:"entry,omitempty"`
 	Args    []string `json:"args,omitempty"`
 	Health  string   `json:"health,omitempty"`
+	// Port is where a server app with its own page listens when free, so
+	// what the page saves in the browser survives restarts.
+	Port int `json:"port,omitempty"`
 	// Open is the page of a server app's own web interface, which the
 	// Apps tab opens in the browser.
 	Open string `json:"open,omitempty"`
@@ -142,6 +144,12 @@ type App struct {
 	Env map[string]string `json:"env,omitempty"`
 	// SizeMB is the rough download size of one install, shown to the user.
 	SizeMB int `json:"size_mb,omitempty"`
+}
+
+// AppSource is one source archive and the folder it goes in.
+type AppSource struct {
+	URL string `json:"url"`
+	Dir string `json:"dir,omitempty"`
 }
 
 // AppStep is one setup command: Run is "node" (a script relative to the
