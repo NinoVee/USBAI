@@ -82,7 +82,7 @@ func (a *App) SaveCloudSettings(up CloudUpdate) error {
 
 // hasCloudModels reports whether config.json lists any cloud model.
 func (a *App) hasCloudModels() bool {
-	for _, m := range a.cfg.Models {
+	for _, m := range a.models() {
 		if m.Cloud() {
 			return true
 		}
@@ -142,7 +142,7 @@ func openAIError(err error) error {
 // TestCloud sends a tiny request to check a provider's key.
 func (a *App) TestCloud(ctx context.Context, provider string) (string, error) {
 	var m config.Model
-	for _, c := range a.cfg.Models {
+	for _, c := range a.models() {
 		if c.Provider == provider {
 			m = c
 			break

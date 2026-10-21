@@ -570,6 +570,31 @@ using after being told not to (GANG uses it to drop "no cap" and "real spit").
 The reply is also tidied afterwards — blank runs are collapsed and a repeated closing line is
 shown once.
 
+### Managing models from Settings
+
+**Settings → Model** manages the models on the drive, on both editions:
+
+- **Download** fetches a listed model that isn't on the drive (with a
+  progress bar and **Cancel**). An interrupted download resumes where it
+  stopped, every file is checked against its SHA-256, and the drive must have
+  room for it plus 1 GB.
+- **Delete** removes a model's files after a confirmation that says how much
+  space it frees. A model from the drive's own list stays in the list so it
+  can be downloaded again; a model you added disappears. The active model
+  can't be deleted, and a model a personality is built on (Qwen3-VL 4B for
+  GANG) asks a second time, because the personality stops working too.
+- **Add models from Hugging Face** searches Hugging Face for GGUF models (most
+  downloaded first), lists a repository's files with their sizes, marks the
+  ones too big for this computer, and downloads the chosen one into
+  `models/chat/hf/<owner>__<name>/`. If the repository has an image projector
+  (`mmproj`), you can add it so the model sees images. File names, sizes and
+  checksums come from Hugging Face, not the browser. Models split into several
+  files and gated models (which need a login or an accepted license) aren't
+  supported. Searching sends only the search words to Hugging Face.
+
+Changes are written to the drive's `config.json`, so they last; models you
+add are kept when the drive is updated.
+
 ### Damaged or incomplete model files
 
 `config.json` records each model's exact size and SHA-256, taken from

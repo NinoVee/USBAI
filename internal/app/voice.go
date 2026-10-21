@@ -19,7 +19,7 @@ import (
 
 // voiceModel returns the first complete voice model on the drive.
 func (a *App) voiceModel() (config.Model, bool) {
-	for _, m := range a.cfg.ModelsByRole("voice") {
+	for _, m := range a.modelsByRole("voice") {
 		if a.cfg.Check(m) == nil {
 			return m, true
 		}

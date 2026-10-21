@@ -185,7 +185,7 @@ func (a *App) evictCache(incoming int64) {
 // CacheStatus reports what is cached, by model name.
 func (a *App) CacheStatus() (names []string, bytes int64) {
 	byKey := map[string]string{}
-	for _, m := range a.cfg.Models {
+	for _, m := range a.models() {
 		if m.Base != "" {
 			continue
 		}

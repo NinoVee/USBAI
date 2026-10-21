@@ -383,6 +383,48 @@ func (a *App) Handler(ui fs.FS, port int) http.Handler {
 		respondErr(w, err)
 	})
 
+	mux.HandleFunc("POST /api/models/{id}/download", func(w http.ResponseWriter, r *http.Request) {
+		respondErr(w, a.DownloadModel(r.PathValue("id")))
+	})
+	mux.HandleFunc("POST /api/models/{id}/cancel", func(w http.ResponseWriter, r *http.Request) {
+		a.CancelDownload(r.PathValue("id"))
+		writeJSON(w, map[string]bool{"ok": true})
+	})
+	mux.HandleFunc("DELETE /api/models/{id}", func(w http.ResponseWriter, r *http.Request) {
+		freed, err := a.DeleteModel(r.PathValue("id"), r.URL.Query().Get("force") == "1")
+		if err != nil {
+			httpError(w, err)
+			return
+		}
+		writeJSON(w, map[string]any{"ok": true, "freed": freed})
+	})
+	mux.HandleFunc("GET /api/hf/search", func(w http.ResponseWriter, r *http.Request) {
+		if _, err := a.unlocked(); err != nil {
+			httpError(w, err)
+			return
+		}
+		respond(w)(a.SearchHF(r.Context(), r.URL.Query().Get("q")))
+	})
+	mux.HandleFunc("GET /api/hf/files", func(w http.ResponseWriter, r *http.Request) {
+		if _, err := a.unlocked(); err != nil {
+			httpError(w, err)
+			return
+		}
+		respond(w)(a.HFRepoFiles(r.Context(), r.URL.Query().Get("repo")))
+	})
+	mux.HandleFunc("POST /api/hf/add", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Repo   string `json:"repo"`
+			File   string `json:"file"`
+			MMProj string `json:"mmproj"`
+		}
+		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<12)).Decode(&body); err != nil {
+			httpError(w, err)
+			return
+		}
+		respond(w)(a.AddHFModel(r.Context(), body.Repo, body.File, body.MMProj))
+	})
+
 	mux.HandleFunc("GET /api/memory", func(w http.ResponseWriter, r *http.Request) {
 		respond(w)(a.Memory())
 	})
@@ -481,6 +523,17 @@ type modelInfo struct {
 	Vision   bool   `json:"vision"`
 	// Provider is set for cloud models ("anthropic" or "openai").
 	Provider string `json:"provider,omitempty"`
+	// For the model manager: the size of its files, whether it can be
+	// downloaded or deleted here, where it came from, and the
+	// personalities built on it.
+	Size        int64    `json:"size,omitempty"`
+	CanDownload bool     `json:"can_download,omitempty"`
+	Deletable   bool     `json:"deletable,omitempty"`
+	Added       string   `json:"added,omitempty"`
+	HFRepo      string   `json:"hf_repo,omitempty"`
+	UsedBy      []string `json:"used_by,omitempty"`
+	Personality bool     `json:"personality,omitempty"`
+	BaseName    string   `json:"base_name,omitempty"`
 }
 
 func (a *App) handleStatus(w http.ResponseWriter, r *http.Request) {
@@ -518,8 +571,16 @@ func (a *App) handleStatus(w http.ResponseWriter, r *http.Request) {
 	a.engMu.Unlock()
 
 	var models []modelInfo
-	for _, m := range a.cfg.ModelsByRole("chat") {
-		mi := modelInfo{ID: m.ID, Name: m.Name, Present: a.cfg.Present(m), MinRAMGB: m.MinRAMGB, Active: m.ID == active, Vision: a.cfg.Vision(m), Provider: m.Provider}
+	for _, m := range a.modelsByRole("chat") {
+		mi := modelInfo{ID: m.ID, Name: m.Name, Present: a.cfg.Present(m), MinRAMGB: m.MinRAMGB, Active: m.ID == active, Vision: a.cfg.Vision(m), Provider: m.Provider,
+			Size: m.Size + m.MMProjSize, Added: m.Added, HFRepo: m.HFRepo, UsedBy: a.personalitiesOf(m.ID), Personality: m.Base != ""}
+		if b, ok := a.findModel(m.Base); ok {
+			mi.BaseName = b.Name
+		}
+		if !m.Cloud() && m.Base == "" {
+			mi.Deletable = a.cfg.Present(m)
+			mi.CanDownload = m.URL != "" && a.cfg.Check(m) != nil
+		}
 		if mi.Present {
 			if err := a.cfg.Check(m); err != nil {
 				mi.Present, mi.Problem = false, err.Error()
@@ -535,6 +596,7 @@ func (a *App) handleStatus(w http.ResponseWriter, r *http.Request) {
 	st["edition"] = a.cfg.Edition
 	st["cloud_models"] = a.hasCloudModels()
 	st["has_apps"] = a.apps != nil
+	st["downloads"] = a.Downloads()
 	st["initialized"] = a.Initialized()
 	a.dataMu.RLock()
 	st["locked"] = a.vault == nil
@@ -580,7 +642,7 @@ func (a *App) handleSelectModel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	found := false
-	for _, m := range a.cfg.ModelsByRole("chat") {
+	for _, m := range a.modelsByRole("chat") {
 		if m.ID == body.ID && a.cfg.Check(m) == nil {
 			found = true
 		}

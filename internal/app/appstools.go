@@ -468,7 +468,7 @@ func (a *App) appRunEnv(id string) map[string]string {
 		return map[string]string{"LANGCHAIN_PROVIDER": "anthropic", "ANTHROPIC_API_KEY": cs.AnthropicKey, "LANGCHAIN_MODEL_NAME": "claude-opus-5-5"}
 	case cs.OpenAIKey != "":
 		model := cs.OpenAIModel
-		for _, m := range a.cfg.Models {
+		for _, m := range a.models() {
 			if model == "" && m.Provider == "openai" {
 				model = m.RemoteModel
 			}

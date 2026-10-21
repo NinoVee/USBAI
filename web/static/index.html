@@ -216,6 +216,15 @@
       <h2>Settings</h2>
       <h3>Model</h3>
       <div id="model-list" class="list"></div>
+      <div id="hf-card" class="card web-card">
+        <h3>➕ Add models from Hugging Face</h3>
+        <p class="muted small">Search Hugging Face for GGUF models (the format GANG AI runs) and download them straight to this drive. Pick a file that fits this computer's memory; files named Q4_K_M are a good balance of size and quality. Searching sends only your search words to Hugging Face. <a href="https://huggingface.co/models?library=gguf&amp;sort=downloads" target="_blank" rel="noopener noreferrer">Browse Hugging Face ↗</a></p>
+        <form id="hf-form" class="inline-form">
+          <input id="hf-q" type="search" autocomplete="off" placeholder="Search, e.g. qwen3 8b, llama 3.1, mistral, gemma">
+          <button class="primary">Search</button>
+        </form>
+        <div id="hf-results" class="list"></div>
+      </div>
       <div id="cloud-card" class="card web-card hidden">
         <h3>☁️ Cloud AI</h3>
         <p class="muted small">Use Claude or ChatGPT with your own API key: save a key here, then press <em>Use</em> on a ☁️ model above. While a cloud model is in use, everything in its chats — your messages, images, document excerpts and remembered notes — is sent to that company, and it bills your API account. The local models never go online. Keys are stored encrypted in your vault and only ever sent to their own company.</p>

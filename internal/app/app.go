@@ -39,7 +39,10 @@ type App struct {
 	// Version is the build version shown in Settings.
 	Version string
 
-	cfg     config.Config
+	cfg config.Config
+	// cfgMu guards cfg.Models, which changes when the user downloads or
+	// deletes a model; read it with models() and modelsByRole().
+	cfgMu   sync.RWMutex
 	host    platform.Info
 	dataDir string
 	log     io.Writer
@@ -97,6 +100,9 @@ type App struct {
 
 	// apps runs the Pro edition's add-on programs (nil when there are none).
 	apps *apps.Manager
+	// dls are the model downloads started from Settings.
+	dls downloads
+
 	// browserTabs maps a chat to its tab in the agent browser.
 	browserMu   sync.Mutex
 	browserTabs map[string]string
@@ -128,6 +134,7 @@ func New(cfg config.Config, host platform.Info, log io.Writer) *App {
 		apps:        appManager(cfg, host, log),
 		session:     newSessionSecret(),
 		browserTabs: map[string]string{},
+		dls:         downloads{m: map[string]*Download{}},
 	}
 	a.initApps()
 	return a
@@ -147,6 +154,33 @@ func appManager(cfg config.Config, host platform.Info, log io.Writer) *apps.Mana
 }
 
 func (a *App) logf(format string, args ...any) { fmt.Fprintf(a.log, format+"\n", args...) }
+
+// models returns the drive's model list (a copy that later changes don't
+// touch).
+func (a *App) models() []config.Model {
+	a.cfgMu.RLock()
+	defer a.cfgMu.RUnlock()
+	return a.cfg.Models
+}
+
+// modelsByRole returns the models with the given role, in config order.
+func (a *App) modelsByRole(role string) []config.Model {
+	var out []config.Model
+	for _, m := range a.models() {
+		if m.Role == role {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// setModels replaces the model list (never changed in place, so copies
+// handed out stay valid).
+func (a *App) setModels(ms []config.Model) {
+	a.cfgMu.Lock()
+	a.cfg.Models = ms
+	a.cfgMu.Unlock()
+}
 
 // settings are non-secret preferences kept outside the vault so they apply
 // before unlocking.
@@ -185,7 +219,7 @@ func (a *App) saveSettings(s settings) error {
 // described in problems.
 func (a *App) chatCandidates() (cands []config.Model, problems []string) {
 	var usable []config.Model
-	for _, m := range a.cfg.ModelsByRole("chat") {
+	for _, m := range a.modelsByRole("chat") {
 		if !a.cfg.Present(m) {
 			continue
 		}
@@ -458,7 +492,7 @@ func (a *App) pickVisionHelper(chat config.Model) (config.Model, string) {
 		return config.Model{}, "turned off in Settings"
 	}
 	var usable []config.Model
-	for _, m := range a.cfg.ModelsByRole("chat") {
+	for _, m := range a.modelsByRole("chat") {
 		if m.ID != chat.ID && !m.Cloud() && a.cfg.Vision(m) && a.cfg.Check(m) == nil {
 			usable = append(usable, m)
 		}
@@ -555,7 +589,7 @@ func firstLine(err error) string {
 }
 
 func (a *App) startEmbed() {
-	models := a.cfg.ModelsByRole("embedding")
+	models := a.modelsByRole("embedding")
 	var m *config.Model
 	for i := range models {
 		if a.cfg.Check(models[i]) == nil {

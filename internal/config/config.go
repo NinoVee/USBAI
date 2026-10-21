@@ -55,6 +55,11 @@ type Model struct {
 	// and replies come from the provider's API with the user's key.
 	Provider    string `json:"provider,omitempty"`
 	RemoteModel string `json:"remote_model,omitempty"`
+	// Added is set on entries the user added from the app ("huggingface",
+	// with the repository in HFRepo); deleting such a model removes its
+	// entry too.
+	Added  string `json:"added,omitempty"`
+	HFRepo string `json:"hf_repo,omitempty"`
 	// Prefixes some embedding models (e.g. nomic-embed) expect.
 	QueryPrefix    string `json:"query_prefix,omitempty"`
 	DocumentPrefix string `json:"document_prefix,omitempty"`

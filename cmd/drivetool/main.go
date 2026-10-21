@@ -14,8 +14,7 @@ import (
 	"archive/tar"
 	"archive/zip"
 	"compress/gzip"
-	"crypto/sha256"
-	"encoding/hex"
+	"context"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -33,6 +32,7 @@ import (
 	"time"
 
 	"github.com/ninovee/usbai/internal/apps"
+	"github.com/ninovee/usbai/internal/fetch"
 
 	"github.com/ninovee/usbai/internal/config"
 )
@@ -773,82 +773,18 @@ func fetchModels(drive string, only map[string]bool) error {
 // download fetches url to path, retrying dropped connections: each retry
 // resumes from the partial .part file, so nothing is downloaded twice.
 func download(url, path, sha string) error {
-	var err error
-	for attempt := 1; attempt <= 6; attempt++ {
-		if err = downloadOnce(url, path, sha); err == nil || !retryable(err) {
-			return err
+	name := filepath.Base(path)
+	err := fetch.Download(context.Background(), url, path, sha, func(done, total int64) {
+		if total > 0 {
+			fmt.Printf("\r  %s: %s / %s (%.0f%%)   ", name, humanSize(done), humanSize(total), 100*float64(done)/float64(total))
+		} else {
+			fmt.Printf("\r  %s: %s   ", name, humanSize(done))
 		}
-		wait := time.Duration(attempt*attempt) * 2 * time.Second
-		fmt.Printf("  connection dropped (%v); resuming in %s (attempt %d of 6)\n", err, wait, attempt+1)
-		time.Sleep(wait)
-	}
+	})
+	fmt.Println()
 	return err
 }
 
-// retryable reports network failures worth resuming after.
-func retryable(err error) bool {
-	msg := err.Error()
-	for _, s := range []string{"interrupted", "connection reset", "timeout", "EOF", "broken pipe", "no such host", "connection refused", "502", "503", "504"} {
-		if strings.Contains(msg, s) {
-			return true
-		}
-	}
-	return false
-}
-
-// downloadOnce fetches url to path via a .part file, resuming a partial
-// download, and verifies sha256 when given.
-func downloadOnce(url, path, sha string) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	part := path + ".part"
-	var offset int64
-	if st, err := os.Stat(part); err == nil {
-		offset = st.Size()
-	}
-	req, _ := http.NewRequest(http.MethodGet, url, nil)
-	if offset > 0 {
-		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", offset))
-	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	flags := os.O_CREATE | os.O_WRONLY
-	switch resp.StatusCode {
-	case http.StatusPartialContent:
-		flags |= os.O_APPEND
-	case http.StatusOK:
-		offset = 0
-		flags |= os.O_TRUNC
-	default:
-		return fmt.Errorf("GET %s: %s", url, resp.Status)
-	}
-	out, err := os.OpenFile(part, flags, 0o644)
-	if err != nil {
-		return err
-	}
-	total := offset + resp.ContentLength
-	pw := &progress{name: filepath.Base(path), done: offset, total: total}
-	_, err = io.Copy(io.MultiWriter(out, pw), resp.Body)
-	out.Close()
-	pw.print() // the final count, even for files that finish within a tick
-	fmt.Println()
-	if err != nil {
-		return fmt.Errorf("download interrupted (re-run to resume): %w", err)
-	}
-	if sha != "" {
-		if err := verify(part, sha); err != nil {
-			os.Remove(part)
-			return err
-		}
-	}
-	return os.Rename(part, path)
-}
-
-// downloadMember fetches a .tgz archive and saves one file from it.
 func downloadMember(url, member, path, sha string) error {
 	tgz := path + ".tgz"
 	if err := download(url, tgz, ""); err != nil {
@@ -884,52 +820,13 @@ func downloadMember(url, member, path, sha string) error {
 		_, err = io.Copy(out, io.LimitReader(tr, 1<<30))
 		out.Close()
 		if err == nil && sha != "" {
-			err = verify(part, sha)
+			err = fetch.Verify(part, sha)
 		}
 		if err != nil {
 			os.Remove(part)
 			return err
 		}
 		return os.Rename(part, path)
-	}
-}
-
-func verify(path, want string) error {
-	f, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
-		return err
-	}
-	if got := hex.EncodeToString(h.Sum(nil)); !strings.EqualFold(got, want) {
-		return fmt.Errorf("checksum mismatch for %s: got %s want %s", path, got, want)
-	}
-	return nil
-}
-
-type progress struct {
-	name        string
-	done, total int64
-	last        time.Time
-}
-
-func (p *progress) Write(b []byte) (int, error) {
-	p.done += int64(len(b))
-	if time.Since(p.last) > 500*time.Millisecond {
-		p.last = time.Now()
-		p.print()
-	}
-	return len(b), nil
-}
-
-func (p *progress) print() {
-	if p.total > 0 {
-		fmt.Printf("\r  %s: %s / %s (%.0f%%)   ", p.name, humanSize(p.done), humanSize(p.total), 100*float64(p.done)/float64(p.total))
-	} else {
-		fmt.Printf("\r  %s: %s   ", p.name, humanSize(p.done))
 	}
 }
 
@@ -1134,7 +1031,7 @@ func verifyDrive(drive string) error {
 		case sum == "":
 			fmt.Println("ok (size only; no checksum in config)")
 		default:
-			if err := verify(path, sum); err != nil {
+			if err := fetch.Verify(path, sum); err != nil {
 				fmt.Println("BAD: checksum mismatch (file is corrupted)")
 				bad++
 			} else {

@@ -18,7 +18,7 @@ const maxSpeechBytes = 8 << 20 // about 4 minutes of 16 kHz mono 16-bit audio
 
 func (a *App) startSpeech() {
 	var m *config.Model
-	for _, c := range a.cfg.ModelsByRole("speech") {
+	for _, c := range a.modelsByRole("speech") {
 		if a.cfg.Check(c) == nil && a.cfg.Vision(c) { // needs its audio encoder too
 			m = &c
 			break

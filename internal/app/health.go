@@ -42,7 +42,7 @@ func (a *App) systemHealth() string {
 
 	// Models on the drive.
 	var present, missing []string
-	for _, m := range a.cfg.ModelsByRole("chat") {
+	for _, m := range a.modelsByRole("chat") {
 		if a.cfg.Present(m) {
 			if err := a.cfg.Check(m); err != nil {
 				missing = append(missing, m.Name+" (damaged: "+firstLineStr(err.Error())+")")

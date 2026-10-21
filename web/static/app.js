@@ -1234,6 +1234,86 @@ async function renderChats() {
   }
 }
 
+// toast shows a short message at the bottom of the window.
+function toast(text) {
+  const t = el("div", { class: "toast", role: "status" }, text);
+  document.body.append(t);
+  setTimeout(() => t.remove(), 5000);
+}
+
+// ---- Model manager ----
+
+async function modelAction(e, method, path) {
+  e.target.disabled = true;
+  try { await api(method, path); } catch (err) { alert(err.message); }
+  refreshStatus();
+}
+
+async function deleteModel(e, m) {
+  let msg = `Delete ${m.name} from the drive?`;
+  if (m.size) msg += ` This frees about ${fmtBytes(m.size)}.`;
+  if (m.used_by && m.used_by.length) msg += `\n\n${m.used_by.join(", ")} ${m.used_by.length > 1 ? "are" : "is"} built on this model and will stop working until it is downloaded again.`;
+  msg += m.added ? "\n\nIt will also be removed from your list." : "\n\nIt stays in the list, so you can download it again later.";
+  if (!confirm(msg)) return;
+  e.target.disabled = true;
+  try {
+    const r = await api("DELETE", `/api/models/${m.id}${m.used_by && m.used_by.length ? "?force=1" : ""}`);
+    if (r.freed) toast(`Deleted ${m.name} — ${fmtBytes(r.freed)} freed`);
+  } catch (err) { alert(err.message); }
+  refreshStatus();
+  refreshStorage();
+}
+
+$("hf-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const q = $("hf-q").value.trim();
+  const box = $("hf-results");
+  if (!q) return;
+  box.replaceChildren(el("div", { class: "muted" }, "Searching Hugging Face…"));
+  let results;
+  try { results = await api("GET", "/api/hf/search?q=" + encodeURIComponent(q)); } catch (err) { box.replaceChildren(el("div", { class: "row error" }, err.message)); return; }
+  box.replaceChildren();
+  if (!results.length) box.append(el("div", { class: "muted" }, "No GGUF models found. Try other words."));
+  for (const r of results) {
+    const files = el("div", { class: "hf-files" });
+    const row = el("div", { class: "row hf-row" },
+      el("div", { class: "grow" },
+        el("a", { href: "https://huggingface.co/" + r.id, target: "_blank", rel: "noopener noreferrer" }, r.id),
+        r.gated ? el("span", { class: "web-badge", title: "Needs a Hugging Face login or license, which GANG AI doesn't support" }, "🔒 gated") : null,
+        el("div", { class: "sub" }, `⬇ ${r.downloads.toLocaleString()} downloads · ♥ ${r.likes.toLocaleString()}`),
+        files),
+      el("button", { onclick: () => showHFFiles(r.id, files) }, "Choose a file"));
+    box.append(row);
+  }
+});
+
+async function showHFFiles(repo, box) {
+  box.replaceChildren(el("div", { class: "muted small" }, "Loading files…"));
+  let f;
+  try { f = await api("GET", "/api/hf/files?repo=" + encodeURIComponent(repo)); } catch (err) { box.replaceChildren(el("div", { class: "sub error-text" }, err.message)); return; }
+  box.replaceChildren();
+  if (!f.models.length) { box.append(el("div", { class: "sub" }, "No single-file GGUF models in this repository.")); return; }
+  let mmproj = null;
+  if (f.mmproj.length) {
+    mmproj = el("select", { "aria-label": "Image reader file" }, el("option", { value: "" }, "Text only"),
+      ...f.mmproj.map((p) => el("option", { value: p.path }, `Sees images: ${p.path.split("/").pop()} (${fmtBytes(p.size)})`)));
+    box.append(el("label", { class: "sub hf-mmproj" }, "This model can see images with an extra file: ", mmproj));
+  }
+  for (const file of f.models) {
+    box.append(el("div", { class: "hf-file" },
+      el("div", { class: "grow" }, el("code", {}, file.path.split("/").pop()), ` · ${fmtBytes(file.size)}`,
+        file.fits_ram ? null : el("span", { class: "web-badge", title: "Bigger than this computer's memory allows" }, "too big for this computer")),
+      el("button", { class: file.fits_ram ? "primary" : "", onclick: async (e) => {
+        e.target.disabled = true;
+        try {
+          const m = await api("POST", "/api/hf/add", { repo, file: file.path, mmproj: mmproj ? mmproj.value : "" });
+          toast(`Downloading ${m.name} to the drive — see the model list above`);
+          refreshStatus();
+        } catch (err) { alert(err.message); e.target.disabled = false; }
+      } }, "Download")));
+  }
+}
+
 // ---- Settings ----
 
 function renderSettings() {
@@ -1249,11 +1329,27 @@ function renderSettings() {
       `Needs ~${m.min_ram_gb} GB RAM` + (m.vision ? " · sees images" : "") + (tooBig ? " — may be slow or fail on this computer" : "");
     const row = el("div", { class: "row" + (m.active ? " active" : "") },
       el("div", { class: "grow" }, m.name,
-        el("div", { class: "sub" }, m.problem ? "⚠ " + m.problem : !m.present ? "Not on this drive" :
+        el("div", { class: "sub" }, m.problem ? "⚠ " + m.problem : !m.present ? (m.base_name ? `Uses ${m.base_name}'s files — download that model to use it` : "Not on this drive") :
           where + (m.active ? ` · ${st.chat_state === "ready" ? "active" : st.chat_state}` : ""))));
-    if (m.present && !m.active) {
-      row.append(el("button", { onclick: async () => { await api("POST", "/api/models/select", { id: m.id }); refreshStatus(); } }, "Use"));
+    const dl = (st.downloads || {})[m.id];
+    const actions = el("div", { class: "model-actions" });
+    if (dl && dl.state === "downloading") {
+      const pct = dl.total ? Math.floor(100 * dl.done / dl.total) : 0;
+      row.querySelector(".sub").textContent = `Downloading… ${pct}% (${fmtBytes(dl.done)} of ${fmtBytes(dl.total)})`;
+      row.querySelector(".grow").append(el("div", { class: "dl-bar" }, el("div", { style: `width:${pct}%` })));
+      actions.append(el("button", { onclick: async () => { await api("POST", `/api/models/${m.id}/cancel`); refreshStatus(); } }, "Cancel"));
+    } else {
+      if (dl && dl.state === "error") row.querySelector(".sub").textContent = "⚠ Download stopped: " + dl.error;
+      if (m.present && !m.active) {
+        actions.append(el("button", { onclick: async () => { await api("POST", "/api/models/select", { id: m.id }); refreshStatus(); } }, "Use"));
+      }
+      if (m.can_download) {
+        actions.append(el("button", { class: "primary", onclick: (e) => modelAction(e, "POST", `/api/models/${m.id}/download`) },
+          `${dl && dl.state === "error" ? "Retry" : "Download"}${m.size ? ` (${fmtBytes(m.size)})` : ""}`));
+      }
+      if (m.deletable && !m.active) actions.append(el("button", { class: "danger", onclick: (e) => deleteModel(e, m) }, "Delete"));
     }
+    if (actions.childNodes.length) row.append(actions);
     models.append(row);
   }
   if (st.chat_error) models.append(el("div", { class: "row error" }, st.chat_error));
