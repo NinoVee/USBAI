@@ -29,6 +29,11 @@ func kvBytes(n int) int64 { return int64(n) * kvBytesPerToken }
 
 // chatContext returns the context window to load m with.
 func (a *App) chatContext(m config.Model) int {
+	if m.Cloud() {
+		// The provider holds the context; config.json sets how much of
+		// it to use (which bounds the cost of each request).
+		return max(m.Context, 8192)
+	}
 	floor := m.Context
 	if floor <= 0 {
 		floor = 4096

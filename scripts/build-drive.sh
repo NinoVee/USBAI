@@ -3,6 +3,11 @@
 #
 #   scripts/build-drive.sh            # binaries + launchers + config only
 #   scripts/build-drive.sh --fetch    # also download runtimes and models
+#   scripts/build-drive.sh --pro      # the Pro edition (large drive) in dist/GANG-AI-PRO
+#
+# The standard edition (dist/PRIVATE-AI) is what the 128 GB drive runs. The
+# Pro edition is the same app plus drive/pro.json (cloud models, and later
+# apps); the two are built from the same code but never mixed.
 #
 # Then copy the contents of dist/PRIVATE-AI to the root of an exFAT-formatted
 # USB drive (exFAT is readable and writable on Windows, macOS and Linux).
@@ -15,7 +20,20 @@ if ! command -v go >/dev/null 2>&1; then
   echo "  Linux:   https://go.dev/doc/install"
   exit 1
 fi
+FETCH=""; PRO=""
+for arg in "$@"; do
+  case "$arg" in
+    --fetch) FETCH=1 ;;
+    --pro) PRO=1 ;;
+    *) echo "unknown option $arg (use --fetch and/or --pro)"; exit 1 ;;
+  esac
+done
 OUT=dist/PRIVATE-AI
+TEMPLATE=drive/config.json
+if [ -n "$PRO" ]; then
+  OUT=dist/GANG-AI-PRO
+  TEMPLATE=drive/config.json,drive/pro.json
+fi
 VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo dev)
 
 mkdir -p "$OUT/bin" "$OUT/runtime" "$OUT/models/chat" "$OUT/models/embed" "$OUT/models/specialist" "$OUT/models/speech" "$OUT/models/voice" "$OUT/data"
@@ -31,18 +49,15 @@ for target in windows/amd64 windows/arm64 darwin/arm64 darwin/amd64 linux/amd64 
     -o "$OUT/bin/$dos-$darch/privateai$ext" ./cmd/privateai
 done
 
-if [ -f "$OUT/config.json" ]; then
-  go run ./cmd/drivetool sync-config -drive "$OUT" -template drive/config.json
-else
-  cp drive/config.json "$OUT/config.json"
-fi
+[ -f "$OUT/config.json" ] || cp drive/config.json "$OUT/config.json"
+go run ./cmd/drivetool sync-config -drive "$OUT" -template "$TEMPLATE"
 cp drive/README.txt "$OUT/README.txt"
 cp launchers/Start-Windows.bat "$OUT/Start-Windows.bat"
 cp launchers/Start-macOS.command "$OUT/Start-macOS.command"
 cp launchers/start-linux.sh "$OUT/start-linux.sh"
 chmod +x "$OUT/Start-macOS.command" "$OUT/start-linux.sh"
 
-if [ "${1:-}" = "--fetch" ]; then
+if [ -n "$FETCH" ]; then
   go run ./cmd/drivetool fetch-runtime -drive "$OUT"
   go run ./cmd/drivetool fetch-models -drive "$OUT"
 fi

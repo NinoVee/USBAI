@@ -206,6 +206,33 @@
       <h2>Settings</h2>
       <h3>Model</h3>
       <div id="model-list" class="list"></div>
+      <div id="cloud-card" class="card web-card hidden">
+        <h3>☁️ Cloud AI</h3>
+        <p class="muted small">Use Claude or ChatGPT with your own API key: save a key here, then press <em>Use</em> on a ☁️ model above. While a cloud model is in use, everything in its chats — your messages, images, document excerpts and remembered notes — is sent to that company, and it bills your API account. The local models never go online. Keys are stored encrypted in your vault and only ever sent to their own company.</p>
+        <div class="web-row">
+          <div class="grow"><strong>Claude</strong> (Anthropic)<div class="sub muted"><a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener noreferrer">Get a Claude API key</a></div></div>
+        </div>
+        <form id="anthropic-form" class="inline-form">
+          <input id="anthropic-key" type="password" autocomplete="off" placeholder="Claude API key">
+          <button class="primary">Save key</button>
+          <button type="button" id="anthropic-test">Test</button>
+          <button type="button" id="anthropic-remove" class="danger hidden">Remove key</button>
+        </form>
+        <div class="web-row">
+          <div class="grow"><strong>ChatGPT</strong> (OpenAI)<div class="sub muted"><a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer">Get an OpenAI API key</a></div></div>
+        </div>
+        <form id="openai-form" class="inline-form">
+          <input id="openai-key" type="password" autocomplete="off" placeholder="OpenAI API key">
+          <button class="primary">Save key</button>
+          <button type="button" id="openai-test">Test</button>
+          <button type="button" id="openai-remove" class="danger hidden">Remove key</button>
+        </form>
+        <form id="openai-model-form" class="inline-form">
+          <input id="openai-model" type="text" autocomplete="off" spellcheck="false" aria-label="ChatGPT model name">
+          <button>Save model name</button>
+        </form>
+        <span id="cloud-status" class="muted"></span>
+      </div>
       <h3>Image reader</h3>
       <p class="muted">When the model above can't see images, a second, smaller vision model can read screenshots for it. It describes each image (including all text), and your main model answers. Needs extra memory: on by default with 16 GB or more.</p>
       <div class="vision-row">
@@ -263,7 +290,7 @@
       </div>
       <p class="muted">Your choice is saved on the drive, so GANG AI keeps it every time you start — on any computer.</p>
       <h3>Privacy</h3>
-      <p class="muted">Nothing goes online unless you switch on Internet access in Agents and give an agent the 🌐 web tools; then only its search words and page addresses are sent. Prompts, documents, chats and memory never leave this computer and are stored only on the drive, encrypted with your passphrase. Forgetting the passphrase means the data cannot be recovered.</p>
+      <p class="muted">Nothing goes online unless you switch on Internet access in Agents and give an agent the 🌐 web tools (then only its search words and page addresses are sent), or you use a ☁️ cloud model (then that chat goes to its company). Otherwise prompts, documents, chats and memory never leave this computer and are stored only on the drive, encrypted with your passphrase. Forgetting the passphrase means the data cannot be recovered.</p>
       <div class="actions">
         <button id="lock-now">Lock</button>
         <button id="shutdown" class="danger">Shut down (before removing drive)</button>

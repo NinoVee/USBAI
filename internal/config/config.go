@@ -50,6 +50,11 @@ type Model struct {
 	// Revision goes up when an entry on the template changes in a way that
 	// drives should pick up on update (e.g. a rewritten personality).
 	Revision int `json:"revision,omitempty"`
+	// Provider makes this a cloud model: "anthropic" (Claude) or "openai"
+	// (ChatGPT). It has no files; RemoteModel is the provider's model id,
+	// and replies come from the provider's API with the user's key.
+	Provider    string `json:"provider,omitempty"`
+	RemoteModel string `json:"remote_model,omitempty"`
 	// Prefixes some embedding models (e.g. nomic-embed) expect.
 	QueryPrefix    string `json:"query_prefix,omitempty"`
 	DocumentPrefix string `json:"document_prefix,omitempty"`
@@ -64,6 +69,9 @@ type Config struct {
 	ExtraArgs    []string `json:"extra_args,omitempty"`
 	SystemPrompt string   `json:"system_prompt"`
 	Models       []Model  `json:"models"`
+	// Edition is "pro" on the large drive (cloud models and apps) and empty
+	// on the standard drive.
+	Edition string `json:"edition,omitempty"`
 
 	// Root is the drive root directory; not serialized.
 	Root string `json:"-"`
@@ -135,6 +143,9 @@ func (c *Config) resolveBases() {
 	}
 }
 
+// Cloud reports whether m runs on a provider's servers instead of the drive.
+func (m Model) Cloud() bool { return m.Provider != "" }
+
 // FindRoot walks up from start looking for config.json. The binaries live in
 // <root>/bin/<platform>/, so this normally succeeds two levels up.
 func FindRoot(start string) (string, error) {
@@ -176,12 +187,18 @@ func (c Config) ModelsByRole(role string) []Model {
 // Vision reports whether the model's image projector is on the drive and
 // complete.
 func (c Config) Vision(m Model) bool {
+	if m.Cloud() {
+		return true // Claude and ChatGPT read images themselves
+	}
 	return m.MMProj != "" && checkFile(c.Path(m.MMProj), m.MMProjSize) == nil
 }
 
 // Check reports why a model's file can't be used: missing, or a different
 // size than expected (usually a copy to the drive that was cut short).
 func (c Config) Check(m Model) error {
+	if m.Cloud() {
+		return nil
+	}
 	if err := checkFile(c.Path(m.File), m.Size); err != nil {
 		return err
 	}
@@ -212,6 +229,9 @@ func checkFile(path string, want int64) error {
 
 // Present reports whether the model file exists on the drive.
 func (c Config) Present(m Model) bool {
+	if m.Cloud() {
+		return true
+	}
 	st, err := os.Stat(c.Path(m.File))
 	return err == nil && !st.IsDir() && st.Size() > 0
 }

@@ -292,7 +292,7 @@ function show(view) {
   if (view === "files") renderDocs();
   if (view === "memory") renderMemory();
   if (view === "chats") renderChats();
-  if (view === "settings") renderSettings();
+  if (view === "settings") { renderSettings(); renderCloud(); }
   if (view === "chat") $("input").focus();
 }
 document.querySelectorAll("#tabs button[data-view]").forEach((b) => b.addEventListener("click", () => show(b.dataset.view)));
@@ -877,6 +877,59 @@ $("web-test").addEventListener("click", async () => {
   }
 });
 
+// ---- Cloud AI (Claude and ChatGPT with the user's own keys) ----
+const CLOUD_NAMES = { anthropic: "Anthropic", openai: "OpenAI" };
+async function renderCloud() {
+  const show = !!(state.status && state.status.cloud_models);
+  $("cloud-card").classList.toggle("hidden", !show);
+  if (!show) return;
+  let cs;
+  try { cs = await api("GET", "/api/cloud"); } catch { return; }
+  for (const p of ["anthropic", "openai"]) {
+    const saved = cs[p + "_key_saved"];
+    $(p + "-key").value = "";
+    $(p + "-key").placeholder = saved ? "•••••••• key saved (type to replace)" : (p === "anthropic" ? "Claude" : "OpenAI") + " API key";
+    $(p + "-remove").classList.toggle("hidden", !saved);
+    $(p + "-test").disabled = !saved;
+  }
+  const om = $("openai-model");
+  if (document.activeElement !== om) om.value = cs.openai_model || "";
+  om.placeholder = "ChatGPT model name (default from config.json)";
+}
+async function saveCloud(body, done) {
+  try {
+    await api("POST", "/api/cloud", body);
+    $("cloud-status").textContent = done;
+  } catch (err) {
+    $("cloud-status").textContent = "✗ " + err.message;
+  }
+  renderCloud();
+}
+for (const p of ["anthropic", "openai"]) {
+  const name = p === "anthropic" ? "Claude" : "OpenAI";
+  $(p + "-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const key = $(p + "-key").value.trim();
+    if (key) await saveCloud({ [p + "_key"]: key }, `✓ ${name} key saved.`);
+  });
+  $(p + "-remove").addEventListener("click", async () => {
+    if (confirm(`Remove the saved ${name} API key?`)) await saveCloud({ [p + "_key"]: "-" }, `${name} key removed.`);
+  });
+  $(p + "-test").addEventListener("click", async () => {
+    $("cloud-status").textContent = `Testing ${name}…`;
+    try {
+      const r = await api("POST", "/api/cloud/test", { provider: p });
+      $("cloud-status").textContent = "✓ " + r.message;
+    } catch (err) {
+      $("cloud-status").textContent = "✗ " + err.message;
+    }
+  });
+}
+$("openai-model-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  await saveCloud({ openai_model: $("openai-model").value.trim() }, "✓ ChatGPT model name saved.");
+});
+
 const usesWeb = (a) => (a.tools || []).some((t) => t === "web_search" || t === "read_webpage");
 const COMPUTER_TOOLS = ["open_item", "list_files", "read_file", "write_file", "list_shortcuts", "run_shortcut", "run_command"];
 const usesComputer = (a) => (a.tools || []).some((t) => COMPUTER_TOOLS.includes(t));
@@ -1085,11 +1138,12 @@ function renderSettings() {
   const ram = Math.floor(st.host.ram_bytes / 2 ** 30);
   for (const m of st.models || []) {
     const tooBig = ram && m.min_ram_gb > ram;
+    const where = m.provider ? `Cloud — sends the chat to ${CLOUD_NAMES[m.provider] || m.provider} · needs your API key · sees images` :
+      `Needs ~${m.min_ram_gb} GB RAM` + (m.vision ? " · sees images" : "") + (tooBig ? " — may be slow or fail on this computer" : "");
     const row = el("div", { class: "row" + (m.active ? " active" : "") },
       el("div", { class: "grow" }, m.name,
         el("div", { class: "sub" }, m.problem ? "⚠ " + m.problem : !m.present ? "Not on this drive" :
-          `Needs ~${m.min_ram_gb} GB RAM` + (m.vision ? " · sees images" : "") + (tooBig ? " — may be slow or fail on this computer" : "") +
-          (m.active ? ` · ${st.chat_state === "ready" ? "active" : st.chat_state}` : ""))));
+          where + (m.active ? ` · ${st.chat_state === "ready" ? "active" : st.chat_state}` : ""))));
     if (m.present && !m.active) {
       row.append(el("button", { onclick: async () => { await api("POST", "/api/models/select", { id: m.id }); refreshStatus(); } }, "Use"));
     }
@@ -1100,7 +1154,7 @@ function renderSettings() {
   // Image reader.
   const sel = $("vision-select");
   if (document.activeElement !== sel) {
-    const choices = (st.models || []).filter((m) => m.present && m.vision && !m.active);
+    const choices = (st.models || []).filter((m) => m.present && m.vision && !m.active && !m.provider);
     sel.replaceChildren(el("option", { value: "" }, "Automatic"), el("option", { value: "off" }, "Off"),
       ...choices.map((m) => el("option", { value: m.id }, m.name)));
     sel.value = st.vision_choice || "";
@@ -1132,7 +1186,7 @@ function renderSettings() {
   $("cache-clear").textContent = st.cache_bytes ? `🧹 Clear cache from this computer (${gb.toFixed(1)} GB)` : "🧹 Cache is empty";
 
   const facts = [
-    ["Private AI version", st.version || "dev"],
+    ["Private AI version", (st.version || "dev") + (st.edition === "pro" ? " (Pro edition)" : "")],
     ["System", `${st.host.os} ${st.host.arch}`],
     ["CPU threads", st.host.cpus],
     ["Memory", ram ? ram + " GB" : "unknown"],

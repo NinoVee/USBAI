@@ -284,6 +284,43 @@ func (a *App) Handler(ui fs.FS, port int) http.Handler {
 		writeJSON(w, map[string]any{"provider": provider, "results": len(res)})
 	})
 
+	mux.HandleFunc("GET /api/cloud", func(w http.ResponseWriter, r *http.Request) {
+		cs, err := a.CloudSettings()
+		if err != nil {
+			httpError(w, err)
+			return
+		}
+		// Never send the keys back; just whether they are saved.
+		writeJSON(w, map[string]any{
+			"anthropic_key_saved": cs.AnthropicKey != "",
+			"openai_key_saved":    cs.OpenAIKey != "",
+			"openai_model":        cs.OpenAIModel,
+		})
+	})
+	mux.HandleFunc("POST /api/cloud", func(w http.ResponseWriter, r *http.Request) {
+		var up CloudUpdate
+		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&up); err != nil {
+			httpError(w, err)
+			return
+		}
+		respondErr(w, a.SaveCloudSettings(up))
+	})
+	mux.HandleFunc("POST /api/cloud/test", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Provider string `json:"provider"`
+		}
+		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<10)).Decode(&body); err != nil {
+			httpError(w, err)
+			return
+		}
+		msg, err := a.TestCloud(r.Context(), body.Provider)
+		if err != nil {
+			httpError(w, err)
+			return
+		}
+		writeJSON(w, map[string]string{"message": msg})
+	})
+
 	mux.HandleFunc("GET /api/memory", func(w http.ResponseWriter, r *http.Request) {
 		respond(w)(a.Memory())
 	})
@@ -349,6 +386,8 @@ type modelInfo struct {
 	MinRAMGB int    `json:"min_ram_gb"`
 	Active   bool   `json:"active"`
 	Vision   bool   `json:"vision"`
+	// Provider is set for cloud models ("anthropic" or "openai").
+	Provider string `json:"provider,omitempty"`
 }
 
 func (a *App) handleStatus(w http.ResponseWriter, r *http.Request) {
@@ -387,7 +426,7 @@ func (a *App) handleStatus(w http.ResponseWriter, r *http.Request) {
 
 	var models []modelInfo
 	for _, m := range a.cfg.ModelsByRole("chat") {
-		mi := modelInfo{ID: m.ID, Name: m.Name, Present: a.cfg.Present(m), MinRAMGB: m.MinRAMGB, Active: m.ID == active, Vision: a.cfg.Vision(m)}
+		mi := modelInfo{ID: m.ID, Name: m.Name, Present: a.cfg.Present(m), MinRAMGB: m.MinRAMGB, Active: m.ID == active, Vision: a.cfg.Vision(m), Provider: m.Provider}
 		if mi.Present {
 			if err := a.cfg.Check(m); err != nil {
 				mi.Present, mi.Problem = false, err.Error()
@@ -400,6 +439,8 @@ func (a *App) handleStatus(w http.ResponseWriter, r *http.Request) {
 	st["cache_dir"] = a.cacheDir()
 	st["host"] = a.host
 	st["version"] = a.Version
+	st["edition"] = a.cfg.Edition
+	st["cloud_models"] = a.hasCloudModels()
 	st["initialized"] = a.Initialized()
 	a.dataMu.RLock()
 	st["locked"] = a.vault == nil

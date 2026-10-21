@@ -19,7 +19,7 @@ PRIVATE-AI/                         (exFAT, 64 GB+)
 ├── Start-macOS.command
 ├── start-linux.sh
 ├── config.json                     models, port, GPU layers, system prompt
-├── bin/<os>-<arch>/privateai       the app (one ~7 MB static Go binary per platform)
+├── bin/<os>-<arch>/privateai       the app (one ~17 MB static Go binary per platform)
 ├── runtime/                        llama.cpp llama-server builds
 │   ├── windows-x64-cuda | -vulkan | -cpu,  windows-arm64-cpu
 │   ├── macos-arm64 (Metal) | macos-x64
@@ -55,7 +55,7 @@ app under 50 MB, and the rest for your documents, index and free space.
 
 | | |
 |---|---|
-| Network | Every server binds to `127.0.0.1` only, and API requests from non-loopback addresses are refused. Nothing calls out unless you switch on agent internet access, which is off by default and sends only search words and page addresses. |
+| Network | Every server binds to `127.0.0.1` only, and API requests from non-loopback addresses are refused. Nothing calls out unless you switch on agent internet access, which is off by default and sends only search words and page addresses, or (Pro edition) you choose a ☁️ cloud model, which sends that chat to its company. |
 | Other websites | Host-header check (blocks DNS rebinding), and every write request needs a custom header (blocks CSRF). Strict CSP. |
 | Data at rest | `data/vault`: AES-256-GCM. The key comes from your passphrase (PBKDF2-SHA256, 600k iterations, random salt). Object names are HMAC'd, so file names reveal nothing. Each object is bound to its name, so swapping files is detected. |
 | Locking | The key lives only in RAM. **Lock** or **Shut down** discards it. |
@@ -327,6 +327,50 @@ Safety:
   misled by a hostile page, so keep internet access off when you don't need
   it.
 
+### Editions: standard and Pro
+
+The same code builds two editions, so a small drive and a large one never
+get mixed up:
+
+- **Standard** (`dist/PRIVATE-AI`, for example a 128 GB flash drive): local
+  models only, fully offline. It is exactly what this README describes
+  everywhere else.
+- **Pro** (`dist/GANG-AI-PRO`, for example a 1 TB drive): everything in
+  standard, plus the cloud models below, and later the add-on apps. Its
+  `config.json` says `"edition": "pro"` and lists the extra entries from
+  `drive/pro.json`.
+
+`scripts/update-drive.sh` reads the edition from the drive it updates, so a
+standard drive stays standard and a Pro drive stays Pro. To turn a drive
+into a Pro drive, run it once with `--pro`.
+
+### Cloud AI: Claude and ChatGPT (Pro edition)
+
+The Pro drive lists ☁️ cloud models in **Settings → Model**: Claude Opus 5.5,
+Claude Sonnet 5.5 and Claude Haiku 5.5 (Anthropic), and ChatGPT (OpenAI). To
+use one, save your own API key under **Settings → Cloud AI** (keys from
+[console.anthropic.com](https://console.anthropic.com/settings/keys) and
+[platform.openai.com](https://platform.openai.com/api-keys)), press **Test**,
+then press **Use** on the model.
+
+- **What is sent:** while a cloud model is in use, everything in its chats
+  goes to that company: your messages, images, the document excerpts the chat
+  uses, and your remembered notes. The model is told so, and never claims the
+  chat stays on the computer. Local models never go online, and a cloud model
+  is never picked automatically, even as a fallback.
+- **Keys** are stored encrypted in the vault, are never sent back to the
+  browser, and only go to their own company.
+- **Cost:** the company bills your API account per use. Each request uses at
+  most about 100K tokens of context (set per model in `config.json`).
+- Claude is called through Anthropic's official Go SDK, with streaming, tool
+  calling (agents work as usual) and Anthropic's server-side fallback, which
+  answers on another Claude model if a safety check declines a request.
+  ChatGPT uses OpenAI's chat completions API.
+- OpenAI renames models often. If ChatGPT says the model isn't available,
+  type a current model name under **Settings → Cloud AI** (the default is
+  `gpt-5.5`).
+- While a cloud model is selected, reading scanned PDFs (OCR) also uses it.
+
 ## Building a drive
 
 You need Go 1.24 or newer.
@@ -335,6 +379,8 @@ You need Go 1.24 or newer.
 make test              # unit tests + end-to-end test against a fake llama-server
 make drive             # cross-compile all 6 targets into dist/PRIVATE-AI
 make drive-full        # also download llama.cpp runtimes + models from config.json (several GB)
+make drive-pro         # the Pro edition (adds drive/pro.json) into dist/GANG-AI-PRO
+make drive-pro-full    # Pro, plus runtimes and models
 ```
 
 Or step by step:
@@ -479,5 +525,6 @@ take a few minutes over USB.
 | `internal/vault` | encrypted object store |
 | `internal/rag` | text extraction, chunking, hybrid index |
 | `internal/app` | app state, chat orchestration, agents and tools, images, HTTP API |
+| `internal/cloud` | Claude (official Anthropic SDK) and ChatGPT clients for the Pro edition's cloud models |
 | `web/static` | the UI (vanilla HTML/CSS/JS, embedded) |
 | `launchers/`, `drive/` | files copied to the drive root |

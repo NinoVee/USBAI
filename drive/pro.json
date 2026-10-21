@@ -1,0 +1,38 @@
+{
+  "_comment": "Pro edition overlay for the large drive: built with scripts/build-drive.sh --pro on top of config.json. Cloud models send the chat to their company and need the user's API key (Settings -> Cloud AI).",
+  "edition": "pro",
+  "models": [
+    {
+      "id": "claude-opus-5-5",
+      "name": "☁️ Claude Opus 5.5 (cloud, Anthropic)",
+      "role": "chat",
+      "provider": "anthropic",
+      "remote_model": "claude-opus-5-5",
+      "context": 100000
+    },
+    {
+      "id": "claude-sonnet-5-5",
+      "name": "☁️ Claude Sonnet 5.5 (cloud, Anthropic: faster, lower cost)",
+      "role": "chat",
+      "provider": "anthropic",
+      "remote_model": "claude-sonnet-5-5",
+      "context": 100000
+    },
+    {
+      "id": "claude-haiku-5-5",
+      "name": "☁️ Claude Haiku 5.5 (cloud, Anthropic: fastest, lowest cost)",
+      "role": "chat",
+      "provider": "anthropic",
+      "remote_model": "claude-haiku-5-5",
+      "context": 100000
+    },
+    {
+      "id": "chatgpt",
+      "name": "☁️ ChatGPT (cloud, OpenAI)",
+      "role": "chat",
+      "provider": "openai",
+      "remote_model": "gpt-5.5",
+      "context": 100000
+    }
+  ]
+}

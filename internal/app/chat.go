@@ -332,7 +332,8 @@ func (a *App) Chat(req ChatRequest, ev ChatEvents) error {
 		}
 		before := answer.Len()
 		var calls []llama.ToolCall
-		calls, err = llama.ChatStream(turnCtx, url, msgs, opts, onDelta)
+		var raw any
+		calls, raw, err = a.chatStream(turnCtx, url, model, msgs, opts, onDelta)
 		// Our token count is an estimate; if the request still doesn't
 		// fit, drop the oldest history or shorten the longest text and
 		// try again rather than fail the turn.
@@ -341,7 +342,7 @@ func (a *App) Chat(req ChatRequest, ev ChatEvents) error {
 			if msgs, userIdx, ok = shrinkMessages(msgs, userIdx); !ok {
 				break
 			}
-			calls, err = llama.ChatStream(turnCtx, url, msgs, opts, onDelta)
+			calls, raw, err = a.chatStream(turnCtx, url, model, msgs, opts, onDelta)
 		}
 		// Commit any held-back text (greeting and bans cleaned) so it is
 		// part of the answer before it is read below.
@@ -352,7 +353,7 @@ func (a *App) Chat(req ChatRequest, ev ChatEvents) error {
 			break
 		}
 		stepText := answer.String()[before:]
-		msgs = append(msgs, llama.Message{Role: "assistant", Content: stepText, ToolCalls: calls})
+		msgs = append(msgs, llama.Message{Role: "assistant", Content: stepText, ToolCalls: calls, Raw: raw})
 		for _, call := range calls {
 			key := call.Function.Name + "\x00" + strings.TrimSpace(call.Function.Arguments)
 			if prev, ok := done[key]; ok {
@@ -526,8 +527,9 @@ func (a *App) searchFirst(agent *Agent) bool {
 func (a *App) systemPrompt(agent *Agent) string {
 	var b strings.Builder
 	b.WriteString(a.cfg.SystemPrompt)
-	if _, m, ok := a.chatEngine(); ok && m.Persona != "" {
-		b.WriteString("\n\n" + m.Persona)
+	_, chatModel, chatOK := a.chatEngine()
+	if chatOK && chatModel.Persona != "" {
+		b.WriteString("\n\n" + chatModel.Persona)
 	}
 	if agent != nil {
 		fmt.Fprintf(&b, "\n\nYou are acting as the agent %q.", agent.Name)
@@ -587,6 +589,9 @@ func (a *App) systemPrompt(agent *Agent) string {
 			b.WriteString(m.Text)
 			b.WriteByte('\n')
 		}
+	}
+	if chatOK && chatModel.Cloud() {
+		b.WriteString(cloudNote(chatModel))
 	}
 	return b.String()
 }

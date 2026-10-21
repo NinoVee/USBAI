@@ -18,6 +18,9 @@ type Message struct {
 	Content    any        `json:"content"`
 	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
 	ToolCallID string     `json:"tool_call_id,omitempty"`
+	// Raw is a cloud provider's own form of an assistant turn (e.g. Claude's
+	// content blocks, thinking included), sent back as-is on the next call.
+	Raw any `json:"-"`
 }
 
 // Part is one piece of a multimodal message.
@@ -81,6 +84,11 @@ type ChatOptions struct {
 	ToolChoice string
 	// MaxTokens caps the reply length (0 = no cap).
 	MaxTokens int
+	// Model and APIKey are set for a cloud API (OpenAI): the request names
+	// the model and carries the key, and temperature is left to the
+	// provider's default, since its newer models accept no other value.
+	Model  string
+	APIKey string
 }
 
 // ChatStream sends a chat completion request and calls onDelta for each
@@ -88,12 +96,21 @@ type ChatOptions struct {
 // stream ends.
 func ChatStream(ctx context.Context, baseURL string, msgs []Message, opts ChatOptions, onDelta func(Delta) error) ([]ToolCall, error) {
 	payload := map[string]any{
-		"messages":    msgs,
-		"stream":      true,
-		"temperature": opts.Temperature,
+		"messages": msgs,
+		"stream":   true,
 	}
-	if opts.MaxTokens > 0 {
-		payload["max_tokens"] = opts.MaxTokens
+	if opts.Model != "" {
+		payload["model"] = opts.Model
+	}
+	switch {
+	case opts.APIKey != "" && opts.MaxTokens > 0:
+		payload["max_completion_tokens"] = opts.MaxTokens
+	case opts.APIKey != "":
+	default:
+		payload["temperature"] = opts.Temperature
+		if opts.MaxTokens > 0 {
+			payload["max_tokens"] = opts.MaxTokens
+		}
 	}
 	if len(opts.Tools) > 0 {
 		payload["tools"] = opts.Tools
@@ -107,6 +124,9 @@ func ChatStream(ctx context.Context, baseURL string, msgs []Message, opts ChatOp
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if opts.APIKey != "" {
+		req.Header.Set("Authorization", "Bearer "+opts.APIKey)
+	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, err
@@ -114,7 +134,7 @@ func ChatStream(ctx context.Context, baseURL string, msgs []Message, opts ChatOp
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return nil, fmt.Errorf("model server: %s: %s", resp.Status, strings.TrimSpace(string(b)))
+		return nil, &StatusError{Code: resp.StatusCode, Msg: fmt.Sprintf("model server: %s: %s", resp.Status, strings.TrimSpace(string(b)))}
 	}
 
 	// Tool calls stream in fragments keyed by index.
@@ -186,6 +206,14 @@ func ChatStream(ctx context.Context, baseURL string, msgs []Message, opts ChatOp
 	}
 	return calls, nil
 }
+
+// StatusError is a non-200 reply from a model server or cloud API.
+type StatusError struct {
+	Code int
+	Msg  string
+}
+
+func (e *StatusError) Error() string { return e.Msg }
 
 // Embed returns one embedding vector per input.
 func Embed(ctx context.Context, baseURL string, inputs []string) ([][]float32, error) {

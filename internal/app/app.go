@@ -180,13 +180,21 @@ func (a *App) chatCandidates() (cands []config.Model, problems []string) {
 			}
 		}
 	}
-	ram := a.host.RAMGB()
+	// Cloud models run only when chosen: they send the chat to the
+	// provider, so they are never a fallback.
+	var local []config.Model
 	for _, m := range usable {
+		if !m.Cloud() {
+			local = append(local, m)
+		}
+	}
+	ram := a.host.RAMGB()
+	for _, m := range local {
 		if ram == 0 || m.MinRAMGB <= ram {
 			add(m)
 		}
 	}
-	rest := append([]config.Model(nil), usable...)
+	rest := append([]config.Model(nil), local...)
 	sort.SliceStable(rest, func(i, j int) bool { return rest[i].MinRAMGB < rest[j].MinRAMGB })
 	for _, m := range rest {
 		add(m)
@@ -338,6 +346,9 @@ func (a *App) startChat() {
 	if len(cands) == 0 {
 		a.chatState = StateNoModel
 		a.chatErr = "no usable chat model in models/ — run drivetool fetch-models"
+		if a.hasCloudModels() {
+			a.chatErr += ", or press Use on a ☁️ cloud model"
+		}
 		if len(problems) > 0 {
 			a.chatErr = strings.Join(problems, "\n")
 		}
@@ -354,6 +365,7 @@ func (a *App) startChat() {
 	// never leaves the user without an assistant.
 	var srv *llama.Server
 	var rt string
+	loaded := false
 	for i, m := range cands {
 		if i > 0 {
 			a.engMu.Lock()
@@ -364,9 +376,14 @@ func (a *App) startChat() {
 			a.chatModel = m
 			a.engMu.Unlock()
 		}
+		if m.Cloud() {
+			rt, loaded = "cloud", true // nothing to load
+			break
+		}
 		var err error
 		srv, rt, err = a.startServer(loadCtx, m, false)
 		if err == nil {
+			loaded = true
 			break
 		}
 		problems = append(problems, m.Name+": "+firstLine(err))
@@ -381,7 +398,7 @@ func (a *App) startChat() {
 		srv.Stop() // superseded by a newer start or shut down
 		return
 	}
-	if srv == nil {
+	if !loaded {
 		a.chatState, a.chatErr = StateError, strings.Join(problems, "\n")
 		return
 	}
@@ -413,7 +430,7 @@ func (a *App) pickVisionHelper(chat config.Model) (config.Model, string) {
 	}
 	var usable []config.Model
 	for _, m := range a.cfg.ModelsByRole("chat") {
-		if m.ID != chat.ID && a.cfg.Vision(m) && a.cfg.Check(m) == nil {
+		if m.ID != chat.ID && !m.Cloud() && a.cfg.Vision(m) && a.cfg.Check(m) == nil {
 			usable = append(usable, m)
 		}
 	}
@@ -551,6 +568,9 @@ func (a *App) startEmbed() {
 func (a *App) chatEngine() (string, config.Model, bool) {
 	a.engMu.Lock()
 	defer a.engMu.Unlock()
+	if a.chatState == StateReady && a.chatModel.Cloud() {
+		return "", a.chatModel, true
+	}
 	if a.chat == nil || !a.chat.Alive() {
 		return "", config.Model{}, false
 	}

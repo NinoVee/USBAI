@@ -63,7 +63,7 @@ func main() {
 	drive := fs.String("drive", "dist/PRIVATE-AI", "drive root containing config.json")
 	only := fs.String("only", "", "comma-separated runtime folders or model ids to fetch (default: all)")
 	tag := fs.String("tag", "latest", "llama.cpp release tag, e.g. b6500")
-	template := fs.String("template", "drive/config.json", "config template for sync-config")
+	template := fs.String("template", "drive/config.json", "config template for sync-config; a comma-separated list adds overlays (e.g. drive/config.json,drive/pro.json)")
 	fs.Parse(args)
 
 	var err error
@@ -530,6 +530,10 @@ func fetchModels(drive string, only map[string]bool) error {
 		if only != nil && !only[m.ID] {
 			continue
 		}
+		if m.Cloud() {
+			fmt.Printf("%s: cloud model, nothing to download\n", m.ID)
+			continue
+		}
 		if cfg.CheckFile(m.File, m.Size) == nil {
 			fmt.Printf("%s: already present\n", m.ID)
 		} else if m.URL == "" {
@@ -763,10 +767,6 @@ func syncConfig(drive, template string) error {
 	if err != nil {
 		return err
 	}
-	tmpl, err := os.ReadFile(template)
-	if err != nil {
-		return err
-	}
 	var curMap map[string]json.RawMessage
 	if err := json.Unmarshal(cur, &curMap); err != nil {
 		return fmt.Errorf("%s: %w", path, err)
@@ -778,8 +778,37 @@ func syncConfig(drive, template string) error {
 		// Retired models are removed from drives by updates.
 		Retired []string `json:"retired_models"`
 	}
-	if err := json.Unmarshal(tmpl, &t); err != nil {
-		return fmt.Errorf("%s: %w", template, err)
+	// The first template is the base; later ones are overlays (the Pro
+	// edition's drive/pro.json) that add models and set top-level
+	// settings such as "edition".
+	for i, name := range strings.Split(template, ",") {
+		b, err := os.ReadFile(name)
+		if err != nil {
+			return err
+		}
+		var part struct {
+			Models  []map[string]any `json:"models"`
+			Retired []string         `json:"retired_models"`
+		}
+		if err := json.Unmarshal(b, &part); err != nil {
+			return fmt.Errorf("%s: %w", name, err)
+		}
+		t.Models = append(t.Models, part.Models...)
+		t.Retired = append(t.Retired, part.Retired...)
+		if i == 0 {
+			continue
+		}
+		var top map[string]json.RawMessage
+		json.Unmarshal(b, &top)
+		for k, v := range top {
+			if k == "models" || k == "retired_models" || strings.HasPrefix(k, "_") {
+				continue
+			}
+			if string(curMap[k]) != string(v) {
+				curMap[k] = v
+				fmt.Printf("config.json: set %s to %s\n", k, v)
+			}
+		}
 	}
 	tmplModels = t.Models
 
@@ -924,8 +953,8 @@ func verifyDrive(drive string) error {
 		}
 	}
 	for _, m := range cfg.Models {
-		if m.Base != "" {
-			continue // a personality: its files are the base model's
+		if m.Base != "" || m.Cloud() {
+			continue // a personality uses its base model's files; a cloud model has none
 		}
 		check(m.ID, m.File, m.Size, m.SHA256)
 		for _, x := range m.Extra {
@@ -959,7 +988,14 @@ func check(drive string) error {
 		return nil
 	})
 	fmt.Printf("Drive %s — %.1f GB used\n\nModels:\n", drive, float64(total)/(1<<30))
+	if cfg.Edition != "" {
+		fmt.Printf("Edition: %s\n\n", cfg.Edition)
+	}
 	for _, m := range cfg.Models {
+		if m.Cloud() {
+			fmt.Printf("  %-16s %-10s cloud (%s %s; needs an API key in Settings)\n", m.ID, m.Role, m.Provider, m.RemoteModel)
+			continue
+		}
 		mark := "missing"
 		if cfg.Present(m) {
 			st, _ := os.Stat(cfg.Path(m.File))

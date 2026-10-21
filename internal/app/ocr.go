@@ -58,7 +58,7 @@ func (a *App) OCRPage(dataURL string) (string, string, error) {
 		}},
 	}
 	var b strings.Builder
-	_, err = llama.ChatStream(a.ctx, url, msgs, llama.ChatOptions{Temperature: 0, MaxTokens: ocrMaxTokens}, func(d llama.Delta) error {
+	_, _, err = a.chatStream(a.ctx, url, model, msgs, llama.ChatOptions{Temperature: 0, MaxTokens: ocrMaxTokens}, func(d llama.Delta) error {
 		b.WriteString(d.Content)
 		return nil
 	})

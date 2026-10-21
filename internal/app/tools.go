@@ -172,7 +172,7 @@ const toolResultLimit = 6000 // characters returned to the model per call, at le
 func (a *App) resultLimit() int {
 	limit := toolResultLimit
 	if _, m, ok := a.chatEngine(); ok {
-		limit = max(limit, m.Context)
+		limit = max(limit, min(m.Context, 32768))
 	}
 	return limit
 }
