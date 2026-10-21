@@ -5,6 +5,7 @@ package apps
 import (
 	"context"
 	"os/exec"
+	"runtime"
 	"syscall"
 	"time"
 )
@@ -32,4 +33,13 @@ func killGroup(cmd *exec.Cmd) {
 		time.Sleep(3 * time.Second)
 		_ = syscall.Kill(pgid, syscall.SIGKILL)
 	}()
+}
+
+// openFile opens an installer: macOS opens it with Finder (a .dmg is
+// mounted), Linux runs it.
+func openFile(p string) error {
+	if runtime.GOOS == "darwin" {
+		return exec.Command("open", p).Start()
+	}
+	return exec.Command(p).Start()
 }

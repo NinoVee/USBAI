@@ -101,19 +101,36 @@ type App struct {
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
 	Homepage    string `json:"homepage,omitempty"`
-	// Packages are the npm packages to install, with exact versions.
-	Packages []string `json:"packages"`
-	// Setup lists commands to run after npm install, each a script path
-	// (relative to the install folder) and its arguments, run with node.
-	Setup [][]string `json:"setup,omitempty"`
-	// Entry is the script that runs the app, relative to the install
-	// folder, with Args. Kind "server" keeps it running on Port and
-	// waits for Health to answer; kind "tool" runs it once per use.
-	Entry  string   `json:"entry"`
-	Args   []string `json:"args,omitempty"`
-	Kind   string   `json:"kind"`
-	Port   int      `json:"port,omitempty"`
-	Health string   `json:"health,omitempty"`
+	// Kind is "server" (kept running; Health must answer), "tool" (run
+	// once per use), "skills" (instructions agents read; nothing runs) or
+	// "installer" (downloads this computer's installer and opens it).
+	Kind string `json:"kind"`
+	// Shared apps are installed once for every kind of computer
+	// (apps/<id>/shared) because nothing in them is system-specific.
+	Shared bool `json:"shared,omitempty"`
+	// Source is a .tar.gz of the app's source (e.g. a GitHub archive of a
+	// pinned commit), unpacked into the install folder (or SourceDir in it)
+	// without its top folder.
+	Source    string `json:"source,omitempty"`
+	SourceDir string `json:"source_dir,omitempty"`
+	// Packages are npm packages and Pip Python packages to install, with
+	// exact versions.
+	Packages []string `json:"packages,omitempty"`
+	Pip      []string `json:"pip,omitempty"`
+	// Steps run after the packages are installed.
+	Steps []AppStep `json:"steps,omitempty"`
+	// Runtime runs Entry: "node" (default) or "python" (Entry is then a
+	// module, run with python -m). Args follow it.
+	Runtime string   `json:"runtime,omitempty"`
+	Entry   string   `json:"entry,omitempty"`
+	Args    []string `json:"args,omitempty"`
+	Health  string   `json:"health,omitempty"`
+	// Open is the page of a server app's own web interface, which the
+	// Apps tab opens in the browser.
+	Open string `json:"open,omitempty"`
+	// Downloads are the installers of an "installer" app, by computer
+	// kind (e.g. "macos-arm64").
+	Downloads map[string]string `json:"downloads,omitempty"`
 	// Env is passed to every command. ${APP_DIR} (the install folder),
 	// ${DATA} (apps/<id>/data, shared by all computers), ${PORT} and
 	// ${NODE_DIR}, ${KEY} (a random key for this run), ${EXE} (".exe" on
@@ -121,6 +138,15 @@ type App struct {
 	Env map[string]string `json:"env,omitempty"`
 	// SizeMB is the rough download size of one install, shown to the user.
 	SizeMB int `json:"size_mb,omitempty"`
+}
+
+// AppStep is one setup command: Run is "node" (a script relative to the
+// install folder), "npm" or "python", run in Dir (relative to the install
+// folder).
+type AppStep struct {
+	Run  string   `json:"run"`
+	Args []string `json:"args"`
+	Dir  string   `json:"dir,omitempty"`
 }
 
 // ExtraFile is one more file of a model. Member, when set, is the path of

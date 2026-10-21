@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -87,7 +88,12 @@ type Status struct {
 	State       string   `json:"state"`
 	Error       string   `json:"error,omitempty"`
 	OtherKinds  []string `json:"other_kinds,omitempty"` // computers it is installed for besides this one
-	NodeReady   bool     `json:"node_ready"`
+	// Missing says what the drive lacks to install the app here.
+	Missing string `json:"missing,omitempty"`
+	// OpenURL is a running app's own web page.
+	OpenURL string `json:"open_url,omitempty"`
+	HasPage bool   `json:"has_page,omitempty"`
+	Shared  bool   `json:"shared,omitempty"`
 }
 
 // List reports every app, in config order.
@@ -95,17 +101,22 @@ func (m *Manager) List(order []config.App) []Status {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var out []Status
-	node := m.nodeReady() == nil
 	for _, c := range order {
 		a := m.apps[c.ID]
 		if a == nil {
 			continue
 		}
 		st := Status{ID: c.ID, Name: c.Name, Description: c.Description, Homepage: c.Homepage, Kind: c.Kind,
-			SizeMB: c.SizeMB, State: a.state, Error: a.err, NodeReady: node}
+			SizeMB: c.SizeMB, State: a.state, Error: a.err, Shared: c.Shared, HasPage: c.Open != ""}
+		if err := m.ready(c); err != nil {
+			st.Missing = err.Error()
+		}
+		if a.state == Running && c.Open != "" {
+			st.OpenURL = fmt.Sprintf("http://127.0.0.1:%d%s", a.port, c.Open)
+		}
 		ents, _ := os.ReadDir(filepath.Join(m.root, "apps", c.ID))
 		for _, e := range ents {
-			if e.IsDir() && e.Name() != m.slug && e.Name() != "data" && fileExists(filepath.Join(m.root, "apps", c.ID, e.Name(), markerFile)) {
+			if !c.Shared && e.IsDir() && e.Name() != m.slug && e.Name() != "data" && fileExists(filepath.Join(m.root, "apps", c.ID, e.Name(), markerFile)) {
 				st.OtherKinds = append(st.OtherKinds, e.Name())
 			}
 		}
@@ -129,10 +140,61 @@ func errUnknown(id string) error { return fmt.Errorf("no app %q on this drive", 
 
 const markerFile = ".installed.json"
 
-func (m *Manager) dir(id string) string     { return filepath.Join(m.root, "apps", id, m.slug) }
+// dir is where an app is installed for this computer: its own folder per
+// kind of computer, or one shared folder.
+func (m *Manager) dir(id string) string {
+	if a, ok := m.apps[id]; ok && a.cfg.Shared {
+		return filepath.Join(m.root, "apps", id, "shared")
+	}
+	return filepath.Join(m.root, "apps", id, m.slug)
+}
 func (m *Manager) dataDir(id string) string { return filepath.Join(m.root, "apps", id, "data") }
 func (m *Manager) installed(id string) bool { return fileExists(filepath.Join(m.dir(id), markerFile)) }
 func (m *Manager) nodeDir() string          { return filepath.Join(m.root, "runtime", "node", m.slug) }
+func (m *Manager) pythonDir() string        { return filepath.Join(m.root, "runtime", "python", m.slug) }
+
+// PythonBin is where the drive's Python is for slug.
+func PythonBin(pyDir, slug string) string {
+	if strings.HasPrefix(slug, "windows") {
+		return filepath.Join(pyDir, "python.exe")
+	}
+	return filepath.Join(pyDir, "bin", "python3")
+}
+
+// needs reports which runtimes an app uses.
+func needs(c config.App) (node, python bool) {
+	node = len(c.Packages) > 0 || (c.Entry != "" && c.Runtime != "python")
+	python = len(c.Pip) > 0 || c.Runtime == "python"
+	for _, st := range c.Steps {
+		switch st.Run {
+		case "python":
+			python = true
+		default:
+			node = true
+		}
+	}
+	return node, python
+}
+
+// ready reports what the drive lacks to install c on this computer.
+func (m *Manager) ready(c config.App) error {
+	if c.Kind == "installer" {
+		if c.Downloads[m.slug] == "" {
+			return fmt.Errorf("%s has no installer for %s", c.Name, m.slug)
+		}
+		return nil
+	}
+	node, python := needs(c)
+	if node {
+		if err := m.nodeReady(); err != nil {
+			return err
+		}
+	}
+	if python && !fileExists(PythonBin(m.pythonDir(), m.slug)) {
+		return fmt.Errorf("Python for %s is not on this drive yet — run: go run ./cmd/drivetool fetch-python -drive <drive>", m.slug)
+	}
+	return nil
+}
 
 // NodeBin and NpmCLI are where the drive's Node.js and npm are for slug.
 func NodeBin(nodeDir, slug string) string {
@@ -159,14 +221,15 @@ func (m *Manager) nodeReady() error {
 // Install downloads and sets up an app for this kind of computer, in the
 // background. It needs the internet.
 func (m *Manager) Install(id string) error {
-	if err := m.nodeReady(); err != nil {
-		return err
-	}
 	m.mu.Lock()
 	a, ok := m.apps[id]
 	if !ok {
 		m.mu.Unlock()
 		return errUnknown(id)
+	}
+	if err := m.ready(a.cfg); err != nil {
+		m.mu.Unlock()
+		return err
 	}
 	switch a.state {
 	case Installing:
@@ -200,44 +263,83 @@ func (m *Manager) Install(id string) error {
 // exFAT can't hold the links npm makes while installing), then copies the
 // result to the drive, turning links into plain files.
 func (m *Manager) install(a *app) error {
+	c := a.cfg
 	tmp, err := os.MkdirTemp("", "gangai-app-")
 	if err != nil {
 		return err
 	}
 	defer os.RemoveAll(tmp)
-	if err := os.WriteFile(filepath.Join(tmp, "package.json"), []byte(`{"name":"gangai-app","private":true}`+"\n"), 0o644); err != nil {
-		return err
-	}
-	env := m.env(a.cfg, tmp, 0, "")
-	env = append(env, "npm_config_cache="+filepath.Join(tmp, "home", ".npm"), "npm_config_update_notifier=false")
-	node := NodeBin(m.nodeDir(), m.slug)
-	args := append([]string{NpmCLI(m.nodeDir(), m.slug), "install", "--no-audit", "--no-fund", "--omit=dev", "--loglevel=error"}, a.cfg.Packages...)
-	m.say(a, "Downloading "+strings.Join(a.cfg.Packages, ", ")+" …")
-	if err := m.runLogged(a, tmp, env, node, args...); err != nil {
-		return fmt.Errorf("npm install failed: %w", err)
-	}
-	for _, step := range a.cfg.Setup {
-		if len(step) == 0 {
-			continue
+	env := m.env(c, tmp, 0, "")
+	env = append(env, "npm_config_cache="+filepath.Join(tmp, "home", ".npm"), "npm_config_update_notifier=false",
+		"PIP_CACHE_DIR="+filepath.Join(tmp, "home", ".cache", "pip"), "PIP_DISABLE_PIP_VERSION_CHECK=1")
+	if c.Source != "" {
+		m.say(a, "Downloading the source …")
+		if err := downloadExtract(c.Source, filepath.Join(tmp, c.SourceDir)); err != nil {
+			return fmt.Errorf("download %s: %w", c.Source, err)
 		}
-		m.say(a, "Setting up: "+strings.Join(step, " "))
-		if err := m.runLogged(a, tmp, env, node, append([]string{filepath.Join(tmp, step[0])}, step[1:]...)...); err != nil {
-			return fmt.Errorf("setup step %s failed: %w", step[0], err)
+	}
+	if c.Kind == "installer" {
+		u := c.Downloads[m.slug]
+		m.say(a, "Downloading "+u+" …")
+		if err := downloadFile(u, filepath.Join(tmp, path.Base(u))); err != nil {
+			return fmt.Errorf("download: %w", err)
+		}
+	}
+	node := NodeBin(m.nodeDir(), m.slug)
+	npm := NpmCLI(m.nodeDir(), m.slug)
+	py := PythonBin(m.pythonDir(), m.slug)
+	if len(c.Packages) > 0 {
+		if !fileExists(filepath.Join(tmp, "package.json")) {
+			if err := os.WriteFile(filepath.Join(tmp, "package.json"), []byte(`{"name":"gangai-app","private":true}`+"\n"), 0o644); err != nil {
+				return err
+			}
+		}
+		args := append([]string{npm, "install", "--no-audit", "--no-fund", "--omit=dev", "--loglevel=error"}, c.Packages...)
+		m.say(a, "Downloading "+strings.Join(c.Packages, ", ")+" …")
+		if err := m.runLogged(a, tmp, env, node, args...); err != nil {
+			return fmt.Errorf("npm install failed: %w", err)
+		}
+	}
+	if len(c.Pip) > 0 {
+		args := append([]string{"-m", "pip", "install", "--target", filepath.Join(tmp, "py"), "--no-warn-script-location", "--progress-bar", "off"}, c.Pip...)
+		m.say(a, "Downloading "+strings.Join(c.Pip, ", ")+" (Python) …")
+		if err := m.runLogged(a, tmp, env, py, args...); err != nil {
+			return fmt.Errorf("pip install failed: %w", err)
+		}
+	}
+	for _, st := range c.Steps {
+		dir := filepath.Join(tmp, st.Dir)
+		m.say(a, "Setting up: "+st.Run+" "+strings.Join(st.Args, " "))
+		var err error
+		switch st.Run {
+		case "npm":
+			err = m.runLogged(a, dir, env, node, append([]string{npm}, st.Args...)...)
+		case "python":
+			err = m.runLogged(a, dir, env, py, st.Args...)
+		default: // a node script, relative to the install folder
+			if len(st.Args) == 0 {
+				continue
+			}
+			err = m.runLogged(a, dir, env, node, append([]string{filepath.Join(tmp, st.Args[0])}, st.Args[1:]...)...)
+		}
+		if err != nil {
+			return fmt.Errorf("setup step %q failed: %w", st.Run+" "+strings.Join(st.Args, " "), err)
 		}
 	}
 	m.say(a, "Copying to the drive …")
-	dest := m.dir(a.cfg.ID)
+	dest := m.dir(c.ID)
 	partial := dest + ".partial"
 	os.RemoveAll(partial)
 	skip := func(rel string) bool {
 		base := filepath.Base(rel)
-		return base == ".bin" || rel == filepath.Join("home", ".npm") || rel == "tmp"
+		return base == ".bin" || base == "__pycache__" || rel == filepath.Join("home", ".npm") ||
+			rel == filepath.Join("home", ".cache", "pip") || rel == "tmp"
 	}
 	if err := CopyTree(tmp, partial, skip); err != nil {
 		os.RemoveAll(partial)
 		return fmt.Errorf("copy to the drive: %w", err)
 	}
-	marker, _ := json.Marshal(map[string]any{"packages": a.cfg.Packages, "installed": time.Now().Format(time.RFC3339)})
+	marker, _ := json.Marshal(map[string]any{"packages": c.Packages, "pip": c.Pip, "source": c.Source, "installed": time.Now().Format(time.RFC3339)})
 	if err := os.WriteFile(filepath.Join(partial, markerFile), marker, 0o644); err != nil {
 		return err
 	}
@@ -254,19 +356,24 @@ func (m *Manager) env(c config.App, dir string, port int, key string) []string {
 	os.MkdirAll(tmp, 0o755)
 	os.MkdirAll(m.dataDir(c.ID), 0o755)
 	nodeBinDir := filepath.Dir(NodeBin(m.nodeDir(), m.slug))
+	pyBinDir := filepath.Dir(PythonBin(m.pythonDir(), m.slug))
+	sep := string(os.PathListSeparator)
 	set := map[string]string{
-		"PATH":            nodeBinDir + string(os.PathListSeparator) + os.Getenv("PATH"),
-		"HOME":            home,
-		"USERPROFILE":     home,
-		"APPDATA":         filepath.Join(home, "AppData", "Roaming"),
-		"LOCALAPPDATA":    filepath.Join(home, "AppData", "Local"),
-		"XDG_CACHE_HOME":  filepath.Join(home, ".cache"),
-		"XDG_CONFIG_HOME": filepath.Join(home, ".config"),
-		"XDG_DATA_HOME":   filepath.Join(home, ".local", "share"),
-		"TMPDIR":          tmp,
-		"TEMP":            tmp,
-		"TMP":             tmp,
-		"DO_NOT_TRACK":    "1",
+		"PATH":             nodeBinDir + sep + pyBinDir + sep + os.Getenv("PATH"),
+		"PYTHONPATH":       filepath.Join(dir, "py"),
+		"PYTHONNOUSERSITE": "1",
+		"PYTHONUTF8":       "1",
+		"HOME":             home,
+		"USERPROFILE":      home,
+		"APPDATA":          filepath.Join(home, "AppData", "Roaming"),
+		"LOCALAPPDATA":     filepath.Join(home, "AppData", "Local"),
+		"XDG_CACHE_HOME":   filepath.Join(home, ".cache"),
+		"XDG_CONFIG_HOME":  filepath.Join(home, ".config"),
+		"XDG_DATA_HOME":    filepath.Join(home, ".local", "share"),
+		"TMPDIR":           tmp,
+		"TEMP":             tmp,
+		"TMP":              tmp,
+		"DO_NOT_TRACK":     "1",
 	}
 	if port > 0 {
 		set["PORT"] = fmt.Sprint(port)
@@ -402,7 +509,8 @@ func (m *Manager) Start(ctx context.Context, id string) error {
 	// tmp, see the app's env) is not kept on the drive.
 	os.RemoveAll(filepath.Join(dir, "tmp"))
 	key := randomKey()
-	cmd := command(NodeBin(m.nodeDir(), m.slug), append([]string{filepath.Join(dir, a.cfg.Entry)}, a.cfg.Args...)...)
+	name, args := m.entry(a.cfg, dir, port)
+	cmd := command(name, args...)
 	cmd.Dir, cmd.Env = dir, m.env(a.cfg, dir, port, key)
 	pr, pw := io.Pipe()
 	cmd.Stdout, cmd.Stderr = pw, pw
@@ -556,7 +664,8 @@ func (m *Manager) RunTool(ctx context.Context, id, dir string, args ...string) (
 		return "", errors.New(a.cfg.Name + " is not installed for this computer yet — install it in the Apps tab")
 	}
 	appDir := m.dir(id)
-	cmd := commandContext(ctx, NodeBin(m.nodeDir(), m.slug), append(append([]string{filepath.Join(appDir, a.cfg.Entry)}, a.cfg.Args...), args...)...)
+	name, base := m.entry(a.cfg, appDir, 0)
+	cmd := commandContext(ctx, name, append(base, args...)...)
 	cmd.Dir, cmd.Env = dir, m.env(a.cfg, appDir, 0, "")
 	out, err := cmd.CombinedOutput()
 	text := string(out)
@@ -570,6 +679,40 @@ func (m *Manager) RunTool(ctx context.Context, id, dir string, args ...string) (
 		return text, ctx.Err()
 	}
 	return text, err
+}
+
+// entry is the command that runs an app: node with its script, or python
+// with its module. ${PORT} in Args is filled in.
+func (m *Manager) entry(c config.App, dir string, port int) (string, []string) {
+	var args []string
+	for _, x := range c.Args {
+		args = append(args, strings.ReplaceAll(x, "${PORT}", fmt.Sprint(port)))
+	}
+	if c.Runtime == "python" {
+		return PythonBin(m.pythonDir(), m.slug), append([]string{"-m", c.Entry}, args...)
+	}
+	return NodeBin(m.nodeDir(), m.slug), append([]string{filepath.Join(dir, c.Entry)}, args...)
+}
+
+// OpenInstaller opens the installer an "installer" app downloaded for
+// this computer, with the computer's own handler.
+func (m *Manager) OpenInstaller(id string) error {
+	m.mu.Lock()
+	a, ok := m.apps[id]
+	m.mu.Unlock()
+	if !ok {
+		return errUnknown(id)
+	}
+	u := a.cfg.Downloads[m.slug]
+	if a.cfg.Kind != "installer" || u == "" || !m.Installed(id) {
+		return errors.New(a.cfg.Name + " has not been downloaded for this computer yet")
+	}
+	p := filepath.Join(m.dir(id), path.Base(u))
+	if strings.HasSuffix(p, ".run") || strings.HasSuffix(p, ".bin") {
+		os.Chmod(p, 0o755)
+	}
+	m.say(a, "Opening "+p)
+	return openFile(p)
 }
 
 func freePort() (int, error) {

@@ -238,6 +238,8 @@ func (a *App) runTool(ctx context.Context, ev ChatEvents, ag *Agent, call llama.
 		} else {
 			return "Error: " + err.Error() + "\nThis page could not be read. Do not describe or cite its contents; say it could not be opened."
 		}
+	case "list_skills", "read_skill", "read_skill_file":
+		out, err = a.skillTool(call.Function.Name, arg)
 	case "browser_open", "browser_read", "browser_click", "browser_type":
 		if out, err = a.browserTool(ctx, call.Function.Name, arg); err != nil {
 			return "Error: " + err.Error()

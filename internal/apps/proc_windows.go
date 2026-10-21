@@ -40,3 +40,6 @@ func killGroup(cmd *exec.Cmd) {
 		cmd.Process.Kill()
 	}
 }
+
+// openFile runs an installer.
+func openFile(p string) error { return exec.Command(p).Start() }

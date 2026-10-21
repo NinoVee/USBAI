@@ -362,6 +362,8 @@ func (a *App) Handler(ui fs.FS, port int) http.Handler {
 			go a.apps.Start(a.ctx, id)
 		case "stop":
 			err = a.apps.Stop(id)
+		case "open":
+			err = a.apps.OpenInstaller(id)
 		default:
 			err = errors.New("unknown action")
 		}

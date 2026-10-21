@@ -956,14 +956,16 @@ async function renderApps() {
       renderApps();
     } }, label);
     const buttons = [];
-    if (!a.node_ready) {
-      // Nothing can be installed until the drive has Node.js for this computer.
+    if (a.missing) {
+      // Nothing can be installed until the drive has what the app needs.
     } else if (a.state === "not_installed") {
       buttons.push(act("install", `Install${a.size_mb ? ` (~${a.size_mb >= 1000 ? (a.size_mb / 1000).toFixed(1) + " GB" : a.size_mb + " MB"})` : ""}`, "primary"));
     } else if (a.state === "installed" || a.state === "error") {
       if (a.kind === "server") buttons.push(act("start", "Start", "primary"));
-      buttons.push(act("install", "Reinstall"));
+      if (a.kind === "installer") buttons.push(act("open", "Open installer", "primary"));
+      buttons.push(act("install", a.kind === "installer" ? "Download again" : "Reinstall"));
     } else if (a.state === "running") {
+      if (a.open_url) buttons.push(el("button", { class: "primary", onclick: () => window.open(a.open_url, "_blank", "noopener") }, "Open"));
       buttons.push(act("stop", "Stop", "danger"));
     }
     const log = el("pre", { class: "app-log" + (openLogs.has(a.id) ? "" : " hidden"), "data-id": a.id });
@@ -976,8 +978,11 @@ async function renderApps() {
     if (openLogs.has(a.id)) showLog();
     let sub = APP_STATES[a.state] || a.state;
     if (a.kind === "tool" && a.state === "installed") sub = "Installed — agents use it when needed";
-    if (a.kind === "server" && a.state === "installed") sub = "Installed — starts by itself when an agent needs it";
-    if (!a.node_ready) sub = "Node.js for this computer is not on the drive yet — run drivetool fetch-node";
+    if (a.kind === "server" && a.state === "installed") sub = a.has_page
+      ? "Installed — press Start, then Open" : "Installed — starts by itself when an agent needs it";
+    if (a.kind === "skills" && a.state === "installed") sub = "Installed for every computer — agents with the 📚 skill tools use it";
+    if (a.kind === "installer" && a.state === "installed") sub = "Downloaded — press Open installer to install it on this computer";
+    if (a.missing) sub = a.missing;
     if (a.error) sub += " — " + a.error;
     if (a.other_kinds && a.other_kinds.length) sub += ` · also installed for ${a.other_kinds.join(", ")}`;
     list.append(el("div", { class: "row app-row" + (a.state === "running" ? " active" : "") },

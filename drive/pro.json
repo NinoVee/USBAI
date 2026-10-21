@@ -41,16 +41,19 @@
       "name": "Camofox Browser",
       "description": "A private web browser your agents can drive: they open pages, read them, click and type. It is built on Camoufox, a Firefox that websites block less often than automated Chrome. Each computer type downloads its own browser once (about 1.3 GB).",
       "homepage": "https://github.com/jo-inc/camofox-browser",
+      "kind": "server",
       "packages": [
         "@askjo/camofox-browser@1.18.1"
       ],
-      "setup": [
-        [
-          "node_modules/@askjo/camofox-browser/lib/camoufox-download.js"
-        ]
+      "steps": [
+        {
+          "run": "node",
+          "args": [
+            "node_modules/@askjo/camofox-browser/lib/camoufox-download.js"
+          ]
+        }
       ],
       "entry": "node_modules/@askjo/camofox-browser/server.js",
-      "kind": "server",
       "health": "/health",
       "env": {
         "CAMOFOX_PORT": "${PORT}",
@@ -70,21 +73,24 @@
       "name": "HyperFrames video maker",
       "description": "Turns HTML into MP4 videos. Agents with the 🎬 Make videos tool write a short animated scene and HyperFrames renders it into your workspace folder. Includes its own Chrome and FFmpeg (about 600 MB per computer type).",
       "homepage": "https://github.com/heygen-com/hyperframes",
+      "kind": "tool",
       "packages": [
         "hyperframes@0.8.181",
         "gsap@3.14.2",
         "ffmpeg-static@5.3.0",
         "@ffprobe-installer/ffprobe@2.1.2"
       ],
-      "setup": [
-        [
-          "node_modules/hyperframes/bin/hyperframes.mjs",
-          "browser",
-          "ensure"
-        ]
+      "steps": [
+        {
+          "run": "node",
+          "args": [
+            "node_modules/hyperframes/bin/hyperframes.mjs",
+            "browser",
+            "ensure"
+          ]
+        }
       ],
       "entry": "node_modules/hyperframes/bin/hyperframes.mjs",
-      "kind": "tool",
       "env": {
         "HYPERFRAMES_NO_TELEMETRY": "1",
         "HYPERFRAMES_SKIP_SKILLS": "1",
@@ -92,6 +98,16 @@
         "HYPERFRAMES_FFPROBE_PATH": "${APP_DIR}/node_modules/@ffprobe-installer/${NPM_PLATFORM}/ffprobe${EXE}"
       },
       "size_mb": 600
+    },
+    {
+      "id": "claude-ads",
+      "name": "Claude Ads",
+      "description": "A paid-advertising skill pack: audits, plans and reports for Google, Meta, YouTube, LinkedIn, TikTok, Microsoft, Apple, Amazon, Reddit, Pinterest, Snapchat and X ads, with 250+ weighted checks. Agents with the 📚 skill tools (or the Ads Auditor template) read its instructions and work from the ad-account exports you add to Files. Works best with a ☁️ Claude model.",
+      "homepage": "https://github.com/AgriciDaniel/claude-ads",
+      "kind": "skills",
+      "shared": true,
+      "source": "https://codeload.github.com/AgriciDaniel/claude-ads/tar.gz/fc3908e786c318776df89a3a098333da377364be",
+      "size_mb": 8
     }
   ]
 }
