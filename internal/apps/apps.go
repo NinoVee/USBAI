@@ -159,8 +159,8 @@ func (m *Manager) installed(id string) bool {
 	}
 	return fileExists(filepath.Join(m.dir(id), markerFile))
 }
-func (m *Manager) nodeDir() string          { return filepath.Join(m.root, "runtime", "node", m.slug) }
-func (m *Manager) pythonDir() string        { return filepath.Join(m.root, "runtime", "python", m.slug) }
+func (m *Manager) nodeDir() string   { return filepath.Join(m.root, "runtime", "node", m.slug) }
+func (m *Manager) pythonDir() string { return filepath.Join(m.root, "runtime", "python", m.slug) }
 
 // PythonBin is where the drive's Python is for slug.
 func PythonBin(pyDir, slug string) string {
