@@ -56,7 +56,7 @@ app under 50 MB, and the rest for your documents, index and free space.
 | | |
 |---|---|
 | Network | Every server binds to `127.0.0.1` only, and API requests from non-loopback addresses are refused. Nothing calls out unless you switch on agent internet access, which is off by default and sends only search words and page addresses, or (Pro edition) you choose a ☁️ cloud model, which sends that chat to its company. |
-| Other websites | Host-header check (blocks DNS rebinding), and every write request needs a custom header (blocks CSRF). Strict CSP. |
+| Other websites | Host-header check (blocks DNS rebinding), and every write request needs a custom header (blocks CSRF). Reading data (chats, memory, files, images) needs a session cookie that only the browser that unlocked gets, so other programs on the computer (such as the agents' own browser) can't read it. Strict CSP. |
 | Data at rest | `data/vault`: AES-256-GCM. The key comes from your passphrase (PBKDF2-SHA256, 600k iterations, random salt). Object names are HMAC'd, so file names reveal nothing. Each object is bound to its name, so swapping files is detected. |
 | Locking | The key lives only in RAM. **Lock** or **Shut down** discards it. |
 | Host computer | Nothing is written outside the drive and logs go only to the console window, unless you turn on **Faster loading** (off by default). That copies only public model files, named by checksum, to the computer's cache folder (`~/Library/Caches/PrivateAI` on macOS, at most 40 GB). It never copies chats, documents or memory, and **Remove cached models** deletes them. |
@@ -371,6 +371,44 @@ then press **Use** on the model.
   `gpt-5.5`).
 - While a cloud model is selected, reading scanned PDFs (OCR) also uses it.
 
+### Apps: Camofox browser and HyperFrames videos (Pro edition)
+
+The Pro drive has an **Apps** tab with add-on programs that run from the
+drive with its own Node.js (`runtime/node/<computer>`, put there by
+`drivetool fetch-node` for Mac, Windows and Linux, Intel and ARM). Nothing is
+installed on the computer: each app's home, cache and temp folders are on the
+drive.
+
+- **Install once per kind of computer.** Apps include parts built for one
+  system (a browser, FFmpeg, native modules), so a Mac, a Windows PC and a
+  Linux PC each press **Install** once; this needs the internet. The drive
+  keeps all of them side by side (`apps/<app>/<computer>`), so after that each
+  computer starts its own copy from the drive. npm runs in a temporary folder
+  on the computer (exFAT can't hold the links npm makes), then the result is
+  copied to the drive and the temporary folder deleted.
+- **Camofox Browser** ([camofox-browser](https://github.com/jo-inc/camofox-browser),
+  MIT): a browser agents can drive, built on Camoufox, a Firefox that websites
+  block less often than automated Chrome. About 1.3 GB per computer type. Give
+  an agent the 🧭 browser tools (or use the **Web Browser** template): it opens
+  pages, reads an outline of them, clicks links and types into fields. It
+  starts by itself when an agent needs it and listens only on this computer,
+  with a random key per run. It refuses addresses on this computer or the home
+  network (and goes back if a click leads there), page text is marked
+  untrusted, and agents are told never to enter passwords or payment details
+  or to buy, post or send anything unless asked. Browsing data (cookies,
+  history) is cleared every time it starts. Browser tools count as internet
+  tools, so they can't be on an agent with computer tools.
+- **HyperFrames** ([hyperframes](https://github.com/heygen-com/hyperframes),
+  Apache-2.0): turns HTML into MP4 video, with its own Chrome, FFmpeg and GSAP
+  (about 600 MB per computer type). Give an agent 🎬 **Make videos** (or use
+  the **Video Maker** template); it writes an animated HTML scene and, after
+  you press Allow, renders `Videos/<name>.mp4` in the workspace folder (Agents
+  → Computer access must be on). Rendering works offline.
+
+Tested on Linux x64: both apps installed from the Apps tab, Camofox browsed
+and clicked through a test site, and HyperFrames rendered a video. The other
+computer types use the same steps but haven't been tried yet.
+
 ## Building a drive
 
 You need Go 1.24 or newer.
@@ -380,7 +418,7 @@ make test              # unit tests + end-to-end test against a fake llama-serve
 make drive             # cross-compile all 6 targets into dist/PRIVATE-AI
 make drive-full        # also download llama.cpp runtimes + models from config.json (several GB)
 make drive-pro         # the Pro edition (adds drive/pro.json) into dist/GANG-AI-PRO
-make drive-pro-full    # Pro, plus runtimes and models
+make drive-pro-full    # Pro, plus runtimes, models and Node.js for the apps (fetch-node)
 ```
 
 Or step by step:
@@ -525,6 +563,7 @@ take a few minutes over USB.
 | `internal/vault` | encrypted object store |
 | `internal/rag` | text extraction, chunking, hybrid index |
 | `internal/app` | app state, chat orchestration, agents and tools, images, HTTP API |
+| `internal/apps` | installs and runs the Pro edition's apps with the drive's Node.js |
 | `internal/cloud` | Claude (official Anthropic SDK) and ChatGPT clients for the Pro edition's cloud models |
 | `web/static` | the UI (vanilla HTML/CSS/JS, embedded) |
 | `launchers/`, `drive/` | files copied to the drive root |

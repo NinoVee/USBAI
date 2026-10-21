@@ -144,6 +144,7 @@ async function refreshStatus() {
     }
     if (st.locked && $("lock").classList.contains("hidden") && $("bye").classList.contains("hidden")) showLock();
     if (state.view === "settings") renderSettings();
+    $("apps-tab").classList.toggle("hidden", !st.has_apps);
     return st;
   } catch {
     $("engine").textContent = "Disconnected";
@@ -292,6 +293,7 @@ function show(view) {
   if (view === "files") renderDocs();
   if (view === "memory") renderMemory();
   if (view === "chats") renderChats();
+  if (view === "apps") renderApps();
   if (view === "settings") { renderSettings(); renderCloud(); }
   if (view === "chat") $("input").focus();
 }
@@ -930,8 +932,64 @@ $("openai-model-form").addEventListener("submit", async (e) => {
   await saveCloud({ openai_model: $("openai-model").value.trim() }, "✓ ChatGPT model name saved.");
 });
 
-const usesWeb = (a) => (a.tools || []).some((t) => t === "web_search" || t === "read_webpage");
-const COMPUTER_TOOLS = ["open_item", "list_files", "read_file", "write_file", "list_shortcuts", "run_shortcut", "run_command"];
+const usesWeb = (a) => (a.tools || []).some((t) => t === "web_search" || t === "read_webpage" || t.startsWith("browser_"));
+const COMPUTER_TOOLS = ["open_item", "list_files", "read_file", "write_file", "list_shortcuts", "run_shortcut", "run_command", "make_video"];
+
+// ---- Apps (Pro edition) ----
+const APP_STATES = { not_installed: "Not installed on this kind of computer", installing: "Installing…", installed: "Installed",
+  starting: "Starting…", running: "● Running", error: "Problem" };
+let appsTimer = null;
+async function renderApps() {
+  clearTimeout(appsTimer);
+  let r;
+  try { r = await api("GET", "/api/apps"); } catch (err) { $("app-list").replaceChildren(el("div", { class: "row error" }, err.message)); return; }
+  $("apps-computer").textContent = r.computer ? `This computer: ${r.computer}.` : "";
+  const list = $("app-list");
+  const openLogs = new Set([...list.querySelectorAll("pre.app-log:not(.hidden)")].map((p) => p.dataset.id));
+  list.replaceChildren();
+  let busy = false;
+  for (const a of r.apps) {
+    busy ||= a.state === "installing" || a.state === "starting";
+    const act = (action, label, cls) => el("button", { class: cls || "", onclick: async (e) => {
+      e.target.disabled = true;
+      try { await api("POST", `/api/apps/${a.id}/${action}`); } catch (err) { alert(err.message); }
+      renderApps();
+    } }, label);
+    const buttons = [];
+    if (!a.node_ready) {
+      // Nothing can be installed until the drive has Node.js for this computer.
+    } else if (a.state === "not_installed") {
+      buttons.push(act("install", `Install${a.size_mb ? ` (~${a.size_mb >= 1000 ? (a.size_mb / 1000).toFixed(1) + " GB" : a.size_mb + " MB"})` : ""}`, "primary"));
+    } else if (a.state === "installed" || a.state === "error") {
+      if (a.kind === "server") buttons.push(act("start", "Start", "primary"));
+      buttons.push(act("install", "Reinstall"));
+    } else if (a.state === "running") {
+      buttons.push(act("stop", "Stop", "danger"));
+    }
+    const log = el("pre", { class: "app-log" + (openLogs.has(a.id) ? "" : " hidden"), "data-id": a.id });
+    const showLog = async () => {
+      const t = await api("GET", `/api/apps/${a.id}/log`);
+      log.textContent = t.log || "(nothing yet)";
+      log.scrollTop = log.scrollHeight;
+    };
+    buttons.push(el("button", { onclick: async () => { log.classList.toggle("hidden"); if (!log.classList.contains("hidden")) showLog(); } }, "Log"));
+    if (openLogs.has(a.id)) showLog();
+    let sub = APP_STATES[a.state] || a.state;
+    if (a.kind === "tool" && a.state === "installed") sub = "Installed — agents use it when needed";
+    if (a.kind === "server" && a.state === "installed") sub = "Installed — starts by itself when an agent needs it";
+    if (!a.node_ready) sub = "Node.js for this computer is not on the drive yet — run drivetool fetch-node";
+    if (a.error) sub += " — " + a.error;
+    if (a.other_kinds && a.other_kinds.length) sub += ` · also installed for ${a.other_kinds.join(", ")}`;
+    list.append(el("div", { class: "row app-row" + (a.state === "running" ? " active" : "") },
+      el("div", { class: "grow" },
+        el("strong", {}, a.name), a.homepage ? el("a", { href: a.homepage, target: "_blank", rel: "noopener noreferrer", class: "small app-home" }, "project page") : null,
+        el("div", { class: "sub" }, a.description),
+        el("div", { class: "sub" + (a.state === "error" ? " error-text" : "") }, sub),
+        log),
+      el("div", { class: "app-actions" }, ...buttons)));
+  }
+  if (busy && state.view === "apps") appsTimer = setTimeout(renderApps, 2000);
+}
 const usesComputer = (a) => (a.tools || []).some((t) => COMPUTER_TOOLS.includes(t));
 
 // ---- Computer access ----

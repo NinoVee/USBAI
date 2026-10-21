@@ -119,7 +119,7 @@ func TestVoiceFiles(t *testing.T) {
 	defer srv.Close()
 	get := func(p string) (int, string, http.Header) {
 		req, _ := http.NewRequest("GET", srv.URL+p, nil)
-		resp, err := http.DefaultClient.Do(req)
+		resp, err := testClient.Do(req)
 		if err != nil {
 			t.Fatal(err)
 		}

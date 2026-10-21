@@ -114,7 +114,7 @@ func (ts *testServer) call(method, path string, body, out any) int {
 	}
 	req, _ := http.NewRequest(method, ts.base+path, rd)
 	req.Header.Set("X-Private-AI", "1")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := testClient.Do(req)
 	if err != nil {
 		ts.t.Fatal(err)
 	}
@@ -135,7 +135,7 @@ func (ts *testServer) chat(body map[string]any) turn {
 	b, _ := json.Marshal(body)
 	req, _ := http.NewRequest("POST", ts.base+"/api/chat", bytes.NewReader(b))
 	req.Header.Set("X-Private-AI", "1")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := testClient.Do(req)
 	if err != nil {
 		ts.t.Fatal(err)
 	}
@@ -174,7 +174,8 @@ func TestAgentUsesTools(t *testing.T) {
 		Templates []Agent
 	}
 	ts.call("GET", "/api/agents/catalog", nil, &catalog)
-	if len(catalog.Tools) != len(toolCatalog) || len(catalog.Templates) == 0 {
+	// A drive without apps doesn't offer the app tools.
+	if len(catalog.Tools) != len(toolCatalog)-len(appToolApps) || len(catalog.Templates) != len(AgentTemplates) {
 		t.Fatalf("catalog: %+v", catalog)
 	}
 
@@ -260,7 +261,7 @@ func TestImagesInChat(t *testing.T) {
 	if len(meta.Images) != 1 {
 		t.Fatalf("meta: %+v", meta)
 	}
-	resp, err := http.Get(ts.base + "/api/images/" + meta.Images[0])
+	resp, err := testClient.Get(ts.base + "/api/images/" + meta.Images[0])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -268,6 +269,18 @@ func TestImagesInChat(t *testing.T) {
 	resp.Body.Close()
 	if !bytes.Equal(got, png) || resp.Header.Get("Content-Type") != "image/png" {
 		t.Fatalf("stored image: %d bytes, %s", len(got), resp.Header.Get("Content-Type"))
+	}
+	// Another program on this computer (say, the agents' browser) has no
+	// session cookie and can't read the image, chats or memory.
+	for _, path := range []string{"/api/images/" + meta.Images[0], "/api/chats", "/api/memory"} {
+		resp, err := http.Get(ts.base + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusLocked {
+			t.Errorf("GET %s without the session cookie: %d, want 423", path, resp.StatusCode)
+		}
 	}
 
 	// Follow-up turns mention earlier images without re-sending them.

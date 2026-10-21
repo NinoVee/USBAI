@@ -193,6 +193,8 @@ func (a *App) runComputerTool(ctx context.Context, ev ChatEvents, name string, a
 		return true, ""
 	}
 	switch name {
+	case "make_video":
+		return a.makeVideo(ctx, cs, arg, ask)
 	case "open_item":
 		target := arg("target")
 		if target == "" {

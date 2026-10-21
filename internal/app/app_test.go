@@ -70,7 +70,7 @@ func TestEndToEnd(t *testing.T) {
 		}
 		req, _ := http.NewRequest(method, base+path, rd)
 		req.Header.Set("X-Private-AI", "1")
-		resp, err := http.DefaultClient.Do(req)
+		resp, err := testClient.Do(req)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -120,7 +120,7 @@ func TestEndToEnd(t *testing.T) {
 	req, _ := http.NewRequest("POST", base+"/api/docs", &buf)
 	req.Header.Set("Content-Type", mw.FormDataContentType())
 	req.Header.Set("X-Private-AI", "1")
-	resp, err = http.DefaultClient.Do(req)
+	resp, err = testClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +143,7 @@ func TestEndToEnd(t *testing.T) {
 		b, _ := json.Marshal(body)
 		req, _ := http.NewRequest("POST", base+"/api/chat", bytes.NewReader(b))
 		req.Header.Set("X-Private-AI", "1")
-		resp, err := http.DefaultClient.Do(req)
+		resp, err := testClient.Do(req)
 		if err != nil {
 			t.Fatal(err)
 		}

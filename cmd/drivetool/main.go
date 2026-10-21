@@ -5,6 +5,7 @@
 //
 //	drivetool fetch-runtime -drive dist/PRIVATE-AI [-tag b6500] [-only linux-x64-cpu,macos-arm64]
 //	drivetool fetch-models  -drive dist/PRIVATE-AI [-only qwen3-4b,nomic-embed]
+//	drivetool fetch-node    -drive dist/GANG-AI-PRO [-only macos-arm64]   (Pro: Node.js for the apps)
 //	drivetool check         -drive dist/PRIVATE-AI
 package main
 
@@ -28,6 +29,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/ninovee/usbai/internal/apps"
 
 	"github.com/ninovee/usbai/internal/config"
 )
@@ -72,6 +75,8 @@ func main() {
 		err = fetchRuntime(*drive, *tag, splitList(*only))
 	case "fetch-models":
 		err = fetchModels(*drive, splitList(*only))
+	case "fetch-node":
+		err = fetchNode(*drive, splitList(*only))
 	case "check":
 		err = check(*drive)
 	case "verify":
@@ -88,7 +93,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: drivetool fetch-runtime|fetch-models|sync-config|check|verify -drive DIR [-only a,b] [-tag bNNNN]")
+	fmt.Fprintln(os.Stderr, "usage: drivetool fetch-runtime|fetch-models|fetch-node|sync-config|check|verify -drive DIR [-only a,b] [-tag bNNNN]")
 	os.Exit(2)
 }
 
@@ -517,6 +522,96 @@ func untargz(archive, dest string) error {
 			}
 		}
 	}
+}
+
+// ---- Node.js (Pro edition apps) ----
+
+// nodeTargets are the Node.js builds put on a Pro drive, by drive folder.
+var nodeTargets = []struct{ Slug, Asset string }{
+	{"macos-arm64", "node-%s-darwin-arm64.tar.gz"},
+	{"macos-x64", "node-%s-darwin-x64.tar.gz"},
+	{"linux-x64", "node-%s-linux-x64.tar.gz"},
+	{"linux-arm64", "node-%s-linux-arm64.tar.gz"},
+	{"windows-x64", "node-%s-win-x64.zip"},
+	{"windows-arm64", "node-%s-win-arm64.zip"},
+}
+
+var nodeDistURL = "https://nodejs.org/dist"
+
+// fetchNode puts Node.js for every computer type into runtime/node/<slug>,
+// with links turned into plain files (exFAT can't hold links).
+func fetchNode(drive string, only map[string]bool) error {
+	v := apps.NodeVersion
+	sums, err := nodeChecksums(v)
+	if err != nil {
+		return err
+	}
+	work, err := os.MkdirTemp("", "drivetool-node-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(work)
+	for _, t := range nodeTargets {
+		if only != nil && !only[t.Slug] {
+			continue
+		}
+		dest := filepath.Join(drive, "runtime", "node", t.Slug)
+		if b, err := os.ReadFile(filepath.Join(dest, "VERSION")); err == nil && strings.TrimSpace(string(b)) == v {
+			fmt.Printf("node %s: %s already present\n", t.Slug, v)
+			continue
+		}
+		asset := fmt.Sprintf(t.Asset, v)
+		sum, ok := sums[asset]
+		if !ok {
+			return fmt.Errorf("node %s: %s is not in the release's SHASUMS256.txt", t.Slug, asset)
+		}
+		fmt.Printf("node %s: downloading %s\n", t.Slug, asset)
+		archive := filepath.Join(work, asset)
+		if err := download(nodeDistURL+"/"+v+"/"+asset, archive, sum); err != nil {
+			return fmt.Errorf("node %s: %w", t.Slug, err)
+		}
+		x := filepath.Join(work, t.Slug)
+		if err := extract(archive, x); err != nil {
+			return fmt.Errorf("node %s: %w", t.Slug, err)
+		}
+		inner := filepath.Join(x, strings.TrimSuffix(strings.TrimSuffix(asset, ".zip"), ".tar.gz"))
+		os.RemoveAll(dest)
+		skip := func(rel string) bool {
+			return rel == "include" || rel == filepath.Join("share", "doc") || rel == filepath.Join("share", "man")
+		}
+		if err := apps.CopyTree(inner, dest, skip); err != nil {
+			return fmt.Errorf("node %s: %w", t.Slug, err)
+		}
+		if err := os.WriteFile(filepath.Join(dest, "VERSION"), []byte(v+"\n"), 0o644); err != nil {
+			return err
+		}
+		os.Remove(archive)
+		os.RemoveAll(x)
+	}
+	return nil
+}
+
+// nodeChecksums reads a Node.js release's SHASUMS256.txt.
+func nodeChecksums(v string) (map[string]string, error) {
+	resp, err := http.Get(nodeDistURL + "/" + v + "/SHASUMS256.txt")
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("nodejs.org: %s", resp.Status)
+	}
+	b, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return nil, err
+	}
+	sums := map[string]string{}
+	for _, line := range strings.Split(string(b), "\n") {
+		if f := strings.Fields(line); len(f) == 2 {
+			sums[f[1]] = f[0]
+		}
+	}
+	return sums, nil
 }
 
 // ---- Models ----
@@ -1028,6 +1123,30 @@ func check(drive string) error {
 			mark += ", personality of " + m.Base
 		}
 		fmt.Printf("  %-16s %-10s %s\n", m.ID, m.Role, mark)
+	}
+	if len(cfg.Apps) > 0 {
+		fmt.Println("\nNode.js (for the apps):")
+		for _, t := range nodeTargets {
+			mark := "missing — run drivetool fetch-node"
+			if b, err := os.ReadFile(filepath.Join(drive, "runtime", "node", t.Slug, "VERSION")); err == nil {
+				mark = "ok (" + strings.TrimSpace(string(b)) + ")"
+			}
+			fmt.Printf("  %-16s %s\n", t.Slug, mark)
+		}
+		fmt.Println("\nApps (installed from the Apps tab, once per computer type):")
+		for _, ap := range cfg.Apps {
+			var kinds []string
+			for _, t := range nodeTargets {
+				if _, err := os.Stat(filepath.Join(drive, "apps", ap.ID, t.Slug, ".installed.json")); err == nil {
+					kinds = append(kinds, t.Slug)
+				}
+			}
+			mark := "not installed yet"
+			if len(kinds) > 0 {
+				mark = "installed for " + strings.Join(kinds, ", ")
+			}
+			fmt.Printf("  %-16s %s\n", ap.ID, mark)
+		}
 	}
 	fmt.Println("\nRuntimes:")
 	var folders []string

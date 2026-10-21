@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ninovee/usbai/internal/apps"
 	"github.com/ninovee/usbai/internal/config"
 	"github.com/ninovee/usbai/internal/llama"
 	"github.com/ninovee/usbai/internal/platform"
@@ -90,6 +91,16 @@ type App struct {
 	// actions holds computer actions waiting for the user's Allow or Deny.
 	actions approvals
 
+	// session is the secret of the browser session cookie, given on
+	// unlock and required to read data from the API (see requireSession).
+	session string
+
+	// apps runs the Pro edition's add-on programs (nil when there are none).
+	apps *apps.Manager
+	// browserTabs maps a chat to its tab in the agent browser.
+	browserMu   sync.Mutex
+	browserTabs map[string]string
+
 	// agentsMu serializes read-modify-write of the agents list.
 	agentsMu sync.Mutex
 
@@ -114,7 +125,17 @@ func New(cfg config.Config, host platform.Info, log io.Writer) *App {
 		speechState: StateStarting,
 		visionState: StateOff,
 		Shutdown:    make(chan struct{}),
+		apps:        appManager(cfg, host, log),
+		session:     newSessionSecret(),
+		browserTabs: map[string]string{},
 	}
+}
+
+func appManager(cfg config.Config, host platform.Info, log io.Writer) *apps.Manager {
+	if len(cfg.Apps) == 0 {
+		return nil
+	}
+	return apps.NewManager(cfg, host.Slug(), log)
 }
 
 func (a *App) logf(format string, args ...any) { fmt.Fprintf(a.log, format+"\n", args...) }
@@ -600,5 +621,8 @@ func (a *App) Stop() {
 		embed.Stop()
 		vision.Stop()
 		speech.Stop()
+		if a.apps != nil {
+			a.apps.StopAll()
+		}
 	})
 }

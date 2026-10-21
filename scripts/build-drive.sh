@@ -60,5 +60,6 @@ chmod +x "$OUT/Start-macOS.command" "$OUT/start-linux.sh"
 if [ -n "$FETCH" ]; then
   go run ./cmd/drivetool fetch-runtime -drive "$OUT"
   go run ./cmd/drivetool fetch-models -drive "$OUT"
+  [ -n "$PRO" ] && go run ./cmd/drivetool fetch-node -drive "$OUT"
 fi
 go run ./cmd/drivetool check -drive "$OUT"

@@ -167,7 +167,7 @@ func TestWebSettingsAPIHidesKey(t *testing.T) {
 	ts := newTestServer(t)
 	ts.call("POST", "/api/web", map[string]any{"brave": true, "brave_key": "secret-key-123"}, nil)
 	req, _ := http.NewRequest("GET", ts.base+"/api/web", nil)
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := testClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}

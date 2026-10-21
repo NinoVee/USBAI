@@ -34,5 +34,64 @@
       "remote_model": "gpt-5.5",
       "context": 100000
     }
+  ],
+  "apps": [
+    {
+      "id": "camofox",
+      "name": "Camofox Browser",
+      "description": "A private web browser your agents can drive: they open pages, read them, click and type. It is built on Camoufox, a Firefox that websites block less often than automated Chrome. Each computer type downloads its own browser once (about 1.3 GB).",
+      "homepage": "https://github.com/jo-inc/camofox-browser",
+      "packages": [
+        "@askjo/camofox-browser@1.18.1"
+      ],
+      "setup": [
+        [
+          "node_modules/@askjo/camofox-browser/lib/camoufox-download.js"
+        ]
+      ],
+      "entry": "node_modules/@askjo/camofox-browser/server.js",
+      "kind": "server",
+      "health": "/health",
+      "env": {
+        "CAMOFOX_PORT": "${PORT}",
+        "CAMOFOX_BIND_HOST": "127.0.0.1",
+        "CAMOFOX_ACCESS_KEY": "${KEY}",
+        "CAMOUFOX_INSTALL_DIR": "${APP_DIR}/camoufox",
+        "CAMOFOX_CRASH_REPORT_ENABLED": "false",
+        "CAMOFOX_PROFILE_DIR": "${APP_DIR}/tmp/profiles",
+        "CAMOFOX_COOKIES_DIR": "${APP_DIR}/tmp/cookies",
+        "CAMOFOX_UPLOADS_DIR": "${APP_DIR}/tmp/uploads",
+        "CAMOFOX_TRACES_DIR": "${APP_DIR}/tmp/traces"
+      },
+      "size_mb": 1300
+    },
+    {
+      "id": "hyperframes",
+      "name": "HyperFrames video maker",
+      "description": "Turns HTML into MP4 videos. Agents with the 🎬 Make videos tool write a short animated scene and HyperFrames renders it into your workspace folder. Includes its own Chrome and FFmpeg (about 600 MB per computer type).",
+      "homepage": "https://github.com/heygen-com/hyperframes",
+      "packages": [
+        "hyperframes@0.8.181",
+        "gsap@3.14.2",
+        "ffmpeg-static@5.3.0",
+        "@ffprobe-installer/ffprobe@2.1.2"
+      ],
+      "setup": [
+        [
+          "node_modules/hyperframes/bin/hyperframes.mjs",
+          "browser",
+          "ensure"
+        ]
+      ],
+      "entry": "node_modules/hyperframes/bin/hyperframes.mjs",
+      "kind": "tool",
+      "env": {
+        "HYPERFRAMES_NO_TELEMETRY": "1",
+        "HYPERFRAMES_SKIP_SKILLS": "1",
+        "HYPERFRAMES_FFMPEG_PATH": "${APP_DIR}/node_modules/ffmpeg-static/ffmpeg${EXE}",
+        "HYPERFRAMES_FFPROBE_PATH": "${APP_DIR}/node_modules/@ffprobe-installer/${NPM_PLATFORM}/ffprobe${EXE}"
+      },
+      "size_mb": 600
+    }
   ]
 }

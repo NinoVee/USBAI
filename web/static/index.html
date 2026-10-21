@@ -179,6 +179,16 @@
     </div>
   </section>
 
+  <!-- Apps (Pro edition) -->
+  <section id="view-apps" class="screen view hidden">
+    <div class="pane">
+      <h2>Apps</h2>
+      <p class="muted">Add-on programs that run from this drive with its own Node.js, so nothing is installed on the computer. Each kind of computer (Mac, Windows, Linux) installs its own copy once, which needs the internet; after that they start from the drive. Agents use them through their tools: 🧭 browser tools for Camofox, 🎬 Make videos for HyperFrames.</p>
+      <p id="apps-computer" class="muted small"></p>
+      <div id="app-list" class="list"></div>
+    </div>
+  </section>
+
   <!-- Memory -->
   <section id="view-memory" class="screen view hidden">
     <div class="pane">
@@ -327,6 +337,7 @@
       <button data-view="files"><span class="ico" aria-hidden="true">📁</span>Files</button>
       <button data-view="memory"><span class="ico" aria-hidden="true">🧠</span>Memory</button>
       <button data-view="chats"><span class="ico" aria-hidden="true">🗂</span>Chats</button>
+      <button data-view="apps" id="apps-tab" class="hidden"><span class="ico" aria-hidden="true">🧩</span>Apps</button>
       <button data-view="settings"><span class="ico" aria-hidden="true">⚙️</span>Settings</button>
       <div id="storage" class="storage hidden" aria-label="Drive storage">
         <div class="storage-head"><span>Drive storage</span><span id="storage-used"></span></div>

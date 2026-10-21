@@ -28,7 +28,7 @@ func (ts *testServer) upload(fields map[string]string, name string, data []byte)
 	req, _ := http.NewRequest("POST", ts.base+"/api/docs", &body)
 	req.Header.Set("X-Private-AI", "1")
 	req.Header.Set("Content-Type", mw.FormDataContentType())
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := testClient.Do(req)
 	if err != nil {
 		ts.t.Fatal(err)
 	}
@@ -75,7 +75,7 @@ func TestScannedPDF(t *testing.T) {
 		t.Fatalf("second upload: %v", res)
 	}
 	id := doc["id"].(string)
-	resp, err := http.Get(ts.base + "/api/docs/" + id + "/file")
+	resp, err := testClient.Get(ts.base + "/api/docs/" + id + "/file")
 	if err != nil {
 		t.Fatal(err)
 	}

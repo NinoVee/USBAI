@@ -193,8 +193,8 @@ func (a *App) SaveAgent(in Agent) (Agent, error) {
 	}
 	// A web page must never be able to steer an agent that can act on
 	// this computer.
-	if hasComputerTool(&in) && (in.HasTool("web_search") || in.HasTool("read_webpage")) {
-		return Agent{}, errors.New("an agent can't have both internet (🌐) and computer (🖥️ 🗂 ⚡ ⌨️) tools: a web page could trick it into acting on your computer. Make two agents instead")
+	if hasComputerTool(&in) && (in.HasTool("web_search") || in.HasTool("read_webpage") || usesBrowser(&in)) {
+		return Agent{}, errors.New("an agent can't have both internet (🌐 🧭) and computer (🖥️ 🗂 ⚡ ⌨️ 🎬) tools: a web page could trick it into acting on your computer. Make two agents instead")
 	}
 	if in.Temperature < 0 || in.Temperature > 1.5 {
 		in.Temperature = 0.6

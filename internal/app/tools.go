@@ -238,7 +238,12 @@ func (a *App) runTool(ctx context.Context, ev ChatEvents, ag *Agent, call llama.
 		} else {
 			return "Error: " + err.Error() + "\nThis page could not be read. Do not describe or cite its contents; say it could not be opened."
 		}
-	case "open_item", "list_files", "read_file", "write_file", "list_shortcuts", "run_shortcut", "run_command":
+	case "browser_open", "browser_read", "browser_click", "browser_type":
+		if out, err = a.browserTool(ctx, call.Function.Name, arg); err != nil {
+			return "Error: " + err.Error()
+		}
+		return a.limitResult(out)
+	case "open_item", "list_files", "read_file", "write_file", "list_shortcuts", "run_shortcut", "run_command", "make_video":
 		return a.limitResult(a.runComputerTool(ctx, ev, call.Function.Name, arg))
 	case "create_note":
 		title := arg("title")

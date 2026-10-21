@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/cookiejar"
 	"net/http/httptest"
 	"strings"
 	"sync"
@@ -139,3 +140,10 @@ func TestCloudModels(t *testing.T) {
 		t.Errorf("status cloud_models=%v runtime=%v", st["cloud_models"], st["chat_runtime"])
 	}
 }
+
+// testClient keeps the session cookie the app gives on unlock, like a
+// browser does.
+var testClient = func() *http.Client {
+	jar, _ := cookiejar.New(nil)
+	return &http.Client{Jar: jar}
+}()

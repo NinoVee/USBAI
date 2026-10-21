@@ -72,6 +72,9 @@ type Config struct {
 	// Edition is "pro" on the large drive (cloud models and apps) and empty
 	// on the standard drive.
 	Edition string `json:"edition,omitempty"`
+	// Apps are add-on programs (Pro edition), installed into apps/<id>/
+	// on the drive and run with the drive's own Node.js.
+	Apps []App `json:"apps,omitempty"`
 
 	// Root is the drive root directory; not serialized.
 	Root string `json:"-"`
@@ -88,6 +91,36 @@ func Default() Config {
 			"When document excerpts are provided, base your answer on them and cite the document name; " +
 			"if they do not contain the answer, say so.",
 	}
+}
+
+// App is an add-on program run with the drive's Node.js runtime. It is
+// installed separately for each kind of computer (into apps/<id>/<slug>),
+// because its npm packages include native parts.
+type App struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	Homepage    string `json:"homepage,omitempty"`
+	// Packages are the npm packages to install, with exact versions.
+	Packages []string `json:"packages"`
+	// Setup lists commands to run after npm install, each a script path
+	// (relative to the install folder) and its arguments, run with node.
+	Setup [][]string `json:"setup,omitempty"`
+	// Entry is the script that runs the app, relative to the install
+	// folder, with Args. Kind "server" keeps it running on Port and
+	// waits for Health to answer; kind "tool" runs it once per use.
+	Entry  string   `json:"entry"`
+	Args   []string `json:"args,omitempty"`
+	Kind   string   `json:"kind"`
+	Port   int      `json:"port,omitempty"`
+	Health string   `json:"health,omitempty"`
+	// Env is passed to every command. ${APP_DIR} (the install folder),
+	// ${DATA} (apps/<id>/data, shared by all computers), ${PORT} and
+	// ${NODE_DIR}, ${KEY} (a random key for this run), ${EXE} (".exe" on
+	// Windows) and ${NPM_PLATFORM} (e.g. darwin-arm64) are filled in.
+	Env map[string]string `json:"env,omitempty"`
+	// SizeMB is the rough download size of one install, shown to the user.
+	SizeMB int `json:"size_mb,omitempty"`
 }
 
 // ExtraFile is one more file of a model. Member, when set, is the path of

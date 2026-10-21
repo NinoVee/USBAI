@@ -73,7 +73,7 @@ func (a *App) Storage() (StorageReport, error) {
 	}
 	r := StorageReport{Total: total, Free: free, Parts: map[string]int64{}, Locked: locked, Checked: time.Now()}
 	r.Parts["models"] = dirSize(a.cfg.Path("models"))
-	r.Parts["app"] = dirSize(a.cfg.Path("runtime")) + dirSize(a.cfg.Path("bin"))
+	r.Parts["app"] = dirSize(a.cfg.Path("runtime")) + dirSize(a.cfg.Path("bin")) + dirSize(a.cfg.Path("apps"))
 	if locked {
 		r.Parts["data"] = dirSize(a.vaultDir())
 	} else {

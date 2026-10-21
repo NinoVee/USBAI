@@ -2,7 +2,10 @@ package app
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/subtle"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -213,7 +216,7 @@ func (a *App) Handler(ui fs.FS, port int) http.Handler {
 		respond(w)(a.Agents())
 	})
 	mux.HandleFunc("GET /api/agents/catalog", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, map[string]any{"tools": ToolInfos(), "templates": AgentTemplates})
+		writeJSON(w, map[string]any{"tools": a.toolInfos(), "templates": a.agentTemplates()})
 	})
 	mux.HandleFunc("POST /api/agents", func(w http.ResponseWriter, r *http.Request) {
 		var ag Agent
@@ -321,6 +324,50 @@ func (a *App) Handler(ui fs.FS, port int) http.Handler {
 		writeJSON(w, map[string]string{"message": msg})
 	})
 
+	mux.HandleFunc("GET /api/apps", func(w http.ResponseWriter, r *http.Request) {
+		if a.apps == nil {
+			writeJSON(w, map[string]any{"apps": []any{}})
+			return
+		}
+		writeJSON(w, map[string]any{"apps": a.apps.List(a.cfg.Apps), "computer": a.host.Slug()})
+	})
+	mux.HandleFunc("GET /api/apps/{id}/log", func(w http.ResponseWriter, r *http.Request) {
+		if a.apps == nil {
+			httpError(w, errors.New("no apps on this drive"))
+			return
+		}
+		text, err := a.apps.Log(r.PathValue("id"))
+		if err != nil {
+			httpError(w, err)
+			return
+		}
+		writeJSON(w, map[string]string{"log": text})
+	})
+	mux.HandleFunc("POST /api/apps/{id}/{action}", func(w http.ResponseWriter, r *http.Request) {
+		if a.apps == nil {
+			httpError(w, errors.New("no apps on this drive"))
+			return
+		}
+		if _, err := a.unlocked(); err != nil {
+			httpError(w, err)
+			return
+		}
+		id := r.PathValue("id")
+		var err error
+		switch r.PathValue("action") {
+		case "install":
+			err = a.apps.Install(id)
+		case "start":
+			// Starting can take a while; the Apps tab polls for the result.
+			go a.apps.Start(a.ctx, id)
+		case "stop":
+			err = a.apps.Stop(id)
+		default:
+			err = errors.New("unknown action")
+		}
+		respondErr(w, err)
+	})
+
 	mux.HandleFunc("GET /api/memory", func(w http.ResponseWriter, r *http.Request) {
 		respond(w)(a.Memory())
 	})
@@ -338,7 +385,38 @@ func (a *App) Handler(ui fs.FS, port int) http.Handler {
 		respondErr(w, a.Forget(r.PathValue("id")))
 	})
 
-	return guard(mux, port)
+	return guard(a.requireSession(mux), port)
+}
+
+const sessionCookie = "gang_session"
+
+func newSessionSecret() string {
+	b := make([]byte, 32)
+	rand.Read(b)
+	return hex.EncodeToString(b)
+}
+
+// requireSession lets only a browser that unlocked the vault read data
+// from the API. The custom header already stops other websites from
+// changing anything, but plain GETs carry no such header: without this, a
+// page in another program on this computer (such as the agents' own
+// browser) could open /api/memory or /api/chats. The cookie is given on
+// unlock, is HttpOnly and same-site only, and lives as long as this run.
+func (a *App) requireSession(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if (r.Method == http.MethodGet || r.Method == http.MethodHead) && strings.HasPrefix(r.URL.Path, "/api/") && r.URL.Path != "/api/status" {
+			c, err := r.Cookie(sessionCookie)
+			if err != nil || subtle.ConstantTimeCompare([]byte(c.Value), []byte(a.session)) != 1 {
+				http.Error(w, "unlock in this browser first", http.StatusLocked)
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (a *App) setSessionCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: a.session, Path: "/", HttpOnly: true, SameSite: http.SameSiteStrictMode})
 }
 
 // guard protects the local API from other websites open in the same
@@ -441,6 +519,7 @@ func (a *App) handleStatus(w http.ResponseWriter, r *http.Request) {
 	st["version"] = a.Version
 	st["edition"] = a.cfg.Edition
 	st["cloud_models"] = a.hasCloudModels()
+	st["has_apps"] = a.apps != nil
 	st["initialized"] = a.Initialized()
 	a.dataMu.RLock()
 	st["locked"] = a.vault == nil
@@ -473,6 +552,7 @@ func (a *App) handleUnlock(w http.ResponseWriter, r *http.Request) {
 		httpError(w, err)
 		return
 	}
+	a.setSessionCookie(w)
 	writeJSON(w, map[string]bool{"ok": true})
 }
 
