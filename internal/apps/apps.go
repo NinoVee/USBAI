@@ -73,10 +73,10 @@ func NewManager(cfg config.Config, slug string, log io.Writer) *Manager {
 	m := &Manager{root: cfg.Root, slug: slug, log: log, apps: map[string]*app{}}
 	for _, c := range cfg.Apps {
 		a := &app{cfg: c, state: NotInstalled}
+		m.apps[c.ID] = a // first, so installed() knows whether it is shared
 		if m.installed(c.ID) {
 			a.state = Installed
 		}
-		m.apps[c.ID] = a
 	}
 	return m
 }

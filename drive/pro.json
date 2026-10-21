@@ -252,6 +252,19 @@
         "NEXT_TELEMETRY_DISABLED": "1"
       },
       "size_mb": 850
+    },
+    {
+      "id": "fincept-terminal",
+      "name": "FinceptTerminal",
+      "description": "A finance terminal for market data, analytics, portfolio and economic research (open source, AGPL-3.0). It is a desktop program that only comes as an installer, so it installs on the computer, not on the drive: Download keeps this computer's installer on the drive, and Open installer starts it. Available for Apple-silicon Macs (macOS 13+), Windows 10/11 (x64) and Linux (x64). About 170–250 MB.",
+      "homepage": "https://github.com/Fincept-Corporation/FinceptTerminal",
+      "kind": "installer",
+      "downloads": {
+        "macos-arm64": "https://github.com/Fincept-Corporation/FinceptTerminal/releases/download/v4.5.1/FinceptTerminal-4.5.1-macos-arm64-setup.dmg",
+        "windows-x64": "https://github.com/Fincept-Corporation/FinceptTerminal/releases/download/v4.5.1/FinceptTerminal-4.5.1-windows-x64-setup.exe",
+        "linux-x64": "https://github.com/Fincept-Corporation/FinceptTerminal/releases/download/v4.5.1/FinceptTerminal-4.5.1-linux-x64-setup.run"
+      },
+      "size_mb": 250
     }
   ]
 }

@@ -959,7 +959,7 @@ async function renderApps() {
     if (a.missing) {
       // Nothing can be installed until the drive has what the app needs.
     } else if (a.state === "not_installed") {
-      buttons.push(act("install", `Install${a.size_mb ? ` (~${a.size_mb >= 1000 ? (a.size_mb / 1000).toFixed(1) + " GB" : a.size_mb + " MB"})` : ""}`, "primary"));
+      buttons.push(act("install", `${a.kind === "installer" ? "Download" : "Install"}${a.size_mb ? ` (~${a.size_mb >= 1000 ? (a.size_mb / 1000).toFixed(1) + " GB" : a.size_mb + " MB"})` : ""}`, "primary"));
     } else if (a.state === "installed" || a.state === "error") {
       if (a.kind === "server") buttons.push(act("start", "Start", "primary"));
       if (a.kind === "installer") buttons.push(act("open", "Open installer", "primary"));
@@ -977,6 +977,7 @@ async function renderApps() {
     buttons.push(el("button", { onclick: async () => { log.classList.toggle("hidden"); if (!log.classList.contains("hidden")) showLog(); } }, "Log"));
     if (openLogs.has(a.id)) showLog();
     let sub = APP_STATES[a.state] || a.state;
+    if (a.state === "not_installed" && (a.shared || a.kind === "installer")) sub = a.kind === "installer" ? "Not downloaded yet" : "Not installed yet";
     if (a.kind === "tool" && a.state === "installed") sub = "Installed — agents use it when needed";
     if (a.kind === "server" && a.state === "installed") sub = a.has_page
       ? "Installed — press Start, then Open" : "Installed — starts by itself when an agent needs it";

@@ -1,9 +1,17 @@
 package apps
 
 import (
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
+	"time"
+
+	"github.com/ninovee/usbai/internal/config"
 )
 
 // TestCopyTreeLinks copies a tree with a link to a file, a link to a folder
@@ -45,5 +53,56 @@ func TestCopyTreeLinks(t *testing.T) {
 	}
 	if _, err := os.Lstat(filepath.Join(dst, "broken")); err == nil {
 		t.Error("broken link was copied")
+	}
+}
+
+// TestInstallerApp downloads this computer's installer and opens it; other
+// computer kinds are told there is none for them.
+func TestInstallerApp(t *testing.T) {
+	if runtime.GOOS == "windows" || runtime.GOOS == "darwin" {
+		t.Skip("opening runs the installer with the system's handler")
+	}
+	root := t.TempDir()
+	marker := filepath.Join(root, "opened")
+	script := "#!/bin/sh\necho yes > " + marker + "\n"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { io.WriteString(w, script) }))
+	defer srv.Close()
+	cfg := config.Config{Root: root, Apps: []config.App{{ID: "fin", Name: "Fin", Kind: "installer",
+		Downloads: map[string]string{"linux-x64": srv.URL + "/Fin-setup.run"}}}}
+
+	other := NewManager(cfg, "macos-x64", io.Discard)
+	if st := other.List(cfg.Apps)[0]; !strings.Contains(st.Missing, "no installer for macos-x64") {
+		t.Errorf("other computer: %+v", st)
+	}
+	// A shared app installed earlier is seen as installed at start.
+	os.MkdirAll(filepath.Join(root, "apps", "pack", "shared"), 0o755)
+	os.WriteFile(filepath.Join(root, "apps", "pack", "shared", markerFile), []byte("{}"), 0o644)
+	cfg.Apps = append(cfg.Apps, config.App{ID: "pack", Kind: "skills", Shared: true})
+	m := NewManager(cfg, "linux-x64", io.Discard)
+	if !m.Installed("pack") || m.List(cfg.Apps)[1].State != Installed {
+		t.Error("shared app installed earlier not seen")
+	}
+	if err := m.OpenInstaller("fin"); err == nil {
+		t.Error("opened before downloading")
+	}
+	if err := m.Install("fin"); err != nil {
+		t.Fatal(err)
+	}
+	for deadline := time.Now().Add(10 * time.Second); !m.Installed("fin"); time.Sleep(10 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			log, _ := m.Log("fin")
+			t.Fatalf("not downloaded:\n%s", log)
+		}
+	}
+	if err := m.OpenInstaller("fin"); err != nil {
+		t.Fatal(err)
+	}
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		if b, _ := os.ReadFile(marker); strings.TrimSpace(string(b)) == "yes" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("installer did not run")
+		}
 	}
 }

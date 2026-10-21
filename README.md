@@ -371,13 +371,14 @@ then press **Use** on the model.
   `gpt-5.5`).
 - While a cloud model is selected, reading scanned PDFs (OCR) also uses it.
 
-### Apps: Camofox browser and HyperFrames videos (Pro edition)
+### Apps (Pro edition)
 
 The Pro drive has an **Apps** tab with add-on programs that run from the
-drive with its own Node.js (`runtime/node/<computer>`, put there by
-`drivetool fetch-node` for Mac, Windows and Linux, Intel and ARM). Nothing is
-installed on the computer: each app's home, cache and temp folders are on the
-drive.
+drive with its own Node.js and Python (`runtime/node/<computer>` and
+`runtime/python/<computer>`, put there by `drivetool fetch-node` and
+`drivetool fetch-python` for Mac, Windows and Linux, Intel and ARM). Nothing
+is installed on the computer (except FinceptTerminal, below): each app's
+home, cache and temp folders are on the drive.
 
 - **Install once per kind of computer.** Apps include parts built for one
   system (a browser, FFmpeg, native modules), so a Mac, a Windows PC and a
@@ -405,8 +406,41 @@ drive.
   you press Allow, renders `Videos/<name>.mp4` in the workspace folder (Agents
   → Computer access must be on). Rendering works offline.
 
-Tested on Linux x64: both apps installed from the Apps tab, Camofox browsed
-and clicked through a test site, and HyperFrames rendered a video. The other
+- **Claude Ads** ([claude-ads](https://github.com/AgriciDaniel/claude-ads),
+  MIT): a skill pack of paid-advertising instructions (audits, plans, budgets
+  and reports for 12 ad platforms). It installs once for every computer
+  (about 8 MB). Agents with the 📚 skill tools, or the **Ads Auditor**
+  template, read the skill and references a task needs and work from the
+  exports, reports and screenshots you add to Files. Nothing in the pack runs,
+  it can't connect to ad accounts or change campaigns, and the skill tools
+  can only read text files inside the pack. Works best with a ☁️ Claude model.
+- **Vibe-Trading** ([Vibe-Trading](https://github.com/HKUDS/Vibe-Trading),
+  MIT): a trading research agent that researches, writes and backtests
+  strategies and runs them on practice (shadow) accounts. It opens in the
+  browser from the Apps tab (port 8762). Each time it starts, GANG AI gives
+  it your Claude key, else your OpenAI key (Settings → Cloud AI), else the
+  local model running on the drive. It reads free public market data
+  online. GANG AI sets up no broker or exchange account. About 0.9 GB per
+  computer type; its data is in `apps/vibe-trading/data`.
+- **Open Generative AI**
+  ([Open-Generative-AI](https://github.com/Anil-matcha/Open-Generative-AI),
+  MIT): an image and video generation studio. It opens in the browser
+  (port 8761). Most models run on muapi.ai with your own MuAPI key, entered
+  on its first page, and are billed by MuAPI. About 0.85 GB per computer type.
+- **FinceptTerminal**
+  ([FinceptTerminal](https://github.com/Fincept-Corporation/FinceptTerminal),
+  AGPL-3.0): a finance terminal. It only comes as an installer, so it installs
+  on the computer, not the drive: **Download** keeps this computer's installer
+  on the drive and **Open installer** starts it. Available for Apple-silicon
+  Macs, Windows x64 and Linux x64.
+
+Fixed ports keep what Vibe-Trading and Open Generative AI save in the browser
+(such as the MuAPI key) across restarts.
+
+Tested on Linux x64: every app installed from the Apps tab. Camofox browsed
+and clicked through a test site, HyperFrames rendered a video, the Claude Ads
+skill tools read the pack, Vibe-Trading and Open Generative AI started and
+served their pages, and FinceptTerminal's installer downloaded. The other
 computer types use the same steps but haven't been tried yet.
 
 ## Building a drive
@@ -418,7 +452,7 @@ make test              # unit tests + end-to-end test against a fake llama-serve
 make drive             # cross-compile all 6 targets into dist/PRIVATE-AI
 make drive-full        # also download llama.cpp runtimes + models from config.json (several GB)
 make drive-pro         # the Pro edition (adds drive/pro.json) into dist/GANG-AI-PRO
-make drive-pro-full    # Pro, plus runtimes, models and Node.js for the apps (fetch-node)
+make drive-pro-full    # Pro, plus runtimes, models, and Node.js and Python for the apps
 ```
 
 Or step by step:
