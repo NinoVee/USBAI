@@ -50,6 +50,10 @@ type Manager struct {
 
 	mu   sync.Mutex
 	apps map[string]*app
+
+	// RunEnv adds settings when an app starts (e.g. the AI provider and key
+	// the user chose); it is not used while installing.
+	RunEnv func(id string) map[string]string
 }
 
 type app struct {
@@ -511,7 +515,7 @@ func (m *Manager) Start(ctx context.Context, id string) error {
 	key := randomKey()
 	name, args := m.entry(a.cfg, dir, port)
 	cmd := command(name, args...)
-	cmd.Dir, cmd.Env = dir, m.env(a.cfg, dir, port, key)
+	cmd.Dir, cmd.Env = dir, m.withRunEnv(id, m.env(a.cfg, dir, port, key))
 	pr, pw := io.Pipe()
 	cmd.Stdout, cmd.Stderr = pw, pw
 	startGroup(cmd)
@@ -666,7 +670,7 @@ func (m *Manager) RunTool(ctx context.Context, id, dir string, args ...string) (
 	appDir := m.dir(id)
 	name, base := m.entry(a.cfg, appDir, 0)
 	cmd := commandContext(ctx, name, append(base, args...)...)
-	cmd.Dir, cmd.Env = dir, m.env(a.cfg, appDir, 0, "")
+	cmd.Dir, cmd.Env = dir, m.withRunEnv(id, m.env(a.cfg, appDir, 0, ""))
 	out, err := cmd.CombinedOutput()
 	text := string(out)
 	if len(text) > 16000 {
@@ -679,6 +683,16 @@ func (m *Manager) RunTool(ctx context.Context, id, dir string, args ...string) (
 		return text, ctx.Err()
 	}
 	return text, err
+}
+
+func (m *Manager) withRunEnv(id string, env []string) []string {
+	if m.RunEnv == nil {
+		return env
+	}
+	for k, v := range m.RunEnv(id) {
+		env = append(env, k+"="+v)
+	}
+	return env
 }
 
 // entry is the command that runs an app: node with its script, or python

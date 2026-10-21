@@ -96,3 +96,28 @@ func TestSkillPack(t *testing.T) {
 		t.Error("Ads Auditor template missing")
 	}
 }
+
+// TestAppRunEnv checks which AI an app is given: the Claude key first, then
+// the OpenAI key, and nothing for apps that don't use AI.
+func TestAppRunEnv(t *testing.T) {
+	ts := newTestServerModels(t, []config.Model{
+		{ID: "vl", Name: "VL", Role: "chat", File: "models/chat/vl.gguf", Context: 8192},
+		{ID: "gpt", Name: "GPT", Role: "chat", Provider: "openai", RemoteModel: "gpt-x", Context: 100000},
+	})
+	ts.a.cfg.Apps = []config.App{{ID: "vt", AI: "langchain"}, {ID: "plain"}}
+	if env := ts.a.appRunEnv("plain"); env != nil {
+		t.Errorf("app without AI got %v", env)
+	}
+	// No keys: the local model on the drive.
+	if env := ts.a.appRunEnv("vt"); env["LANGCHAIN_PROVIDER"] != "openai" || !strings.HasSuffix(env["OPENAI_BASE_URL"], "/v1") || env["LANGCHAIN_MODEL_NAME"] != "vl" {
+		t.Errorf("local: %v", env)
+	}
+	ts.call("POST", "/api/cloud", map[string]string{"openai_key": "sk-o"}, nil)
+	if env := ts.a.appRunEnv("vt"); env["OPENAI_API_KEY"] != "sk-o" || env["LANGCHAIN_MODEL_NAME"] != "gpt-x" || env["OPENAI_BASE_URL"] != "" {
+		t.Errorf("openai: %v", env)
+	}
+	ts.call("POST", "/api/cloud", map[string]string{"anthropic_key": "sk-a"}, nil)
+	if env := ts.a.appRunEnv("vt"); env["LANGCHAIN_PROVIDER"] != "anthropic" || env["ANTHROPIC_API_KEY"] != "sk-a" {
+		t.Errorf("anthropic: %v", env)
+	}
+}

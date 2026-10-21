@@ -40,8 +40,12 @@ echo "updating $DRIVE"
 cp -R "$OUT/bin" "$DRIVE/"
 cp "$OUT/README.txt" "$OUT/Start-Windows.bat" "$OUT/Start-macOS.command" "$OUT/start-linux.sh" "$DRIVE/"
 go run ./cmd/drivetool sync-config -drive "$DRIVE" -template "$TEMPLATE"
-# Pro drives run their apps with the drive's own Node.js (all computer types).
-[ -n "$PRO" ] && go run ./cmd/drivetool fetch-node -drive "$DRIVE"
+# Pro drives run their apps with the drive's own Node.js and Python (all
+# computer types); already-present versions are skipped.
+if [ -n "$PRO" ]; then
+  go run ./cmd/drivetool fetch-node -drive "$DRIVE"
+  go run ./cmd/drivetool fetch-python -drive "$DRIVE"
+fi
 go run ./cmd/drivetool check -drive "$DRIVE"
 echo
 echo "Drive updated. Start Private AI from the drive."

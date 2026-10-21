@@ -128,6 +128,10 @@ type App struct {
 	// Open is the page of a server app's own web interface, which the
 	// Apps tab opens in the browser.
 	Open string `json:"open,omitempty"`
+	// AI, when "langchain", gives the app the AI model the user set up
+	// (LANGCHAIN_PROVIDER, LANGCHAIN_MODEL_NAME and the provider's key or
+	// address) each time it starts.
+	AI string `json:"ai,omitempty"`
 	// Downloads are the installers of an "installer" app, by computer
 	// kind (e.g. "macos-arm64").
 	Downloads map[string]string `json:"downloads,omitempty"`

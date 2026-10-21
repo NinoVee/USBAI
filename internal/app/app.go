@@ -113,7 +113,7 @@ type App struct {
 // New creates the app. Call StartEngines to load the models.
 func New(cfg config.Config, host platform.Info, log io.Writer) *App {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &App{
+	a := &App{
 		cfg:         cfg,
 		host:        host,
 		dataDir:     cfg.Path("data"),
@@ -128,6 +128,14 @@ func New(cfg config.Config, host platform.Info, log io.Writer) *App {
 		apps:        appManager(cfg, host, log),
 		session:     newSessionSecret(),
 		browserTabs: map[string]string{},
+	}
+	a.initApps()
+	return a
+}
+
+func (a *App) initApps() {
+	if a.apps != nil {
+		a.apps.RunEnv = a.appRunEnv
 	}
 }
 

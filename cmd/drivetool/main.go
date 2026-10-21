@@ -6,6 +6,7 @@
 //	drivetool fetch-runtime -drive dist/PRIVATE-AI [-tag b6500] [-only linux-x64-cpu,macos-arm64]
 //	drivetool fetch-models  -drive dist/PRIVATE-AI [-only qwen3-4b,nomic-embed]
 //	drivetool fetch-node    -drive dist/GANG-AI-PRO [-only macos-arm64]   (Pro: Node.js for the apps)
+//	drivetool fetch-python  -drive dist/GANG-AI-PRO [-only macos-arm64]   (Pro: Python for the apps)
 //	drivetool check         -drive dist/PRIVATE-AI
 package main
 
@@ -21,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -77,6 +79,8 @@ func main() {
 		err = fetchModels(*drive, splitList(*only))
 	case "fetch-node":
 		err = fetchNode(*drive, splitList(*only))
+	case "fetch-python":
+		err = fetchPython(*drive, splitList(*only))
 	case "check":
 		err = check(*drive)
 	case "verify":
@@ -93,7 +97,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: drivetool fetch-runtime|fetch-models|fetch-node|sync-config|check|verify -drive DIR [-only a,b] [-tag bNNNN]")
+	fmt.Fprintln(os.Stderr, "usage: drivetool fetch-runtime|fetch-models|fetch-node|fetch-python|sync-config|check|verify -drive DIR [-only a,b] [-tag bNNNN]")
 	os.Exit(2)
 }
 
@@ -591,15 +595,94 @@ func fetchNode(drive string, only map[string]bool) error {
 	return nil
 }
 
+// Python comes from python-build-standalone (self-contained builds that
+// run from any folder), pinned to one release.
+const (
+	pythonRelease = "20261013"
+	pythonVersion = "3.12.15"
+)
+
+var pythonDistURL = "https://github.com/astral-sh/python-build-standalone/releases/download/" + pythonRelease
+
+var pythonTargets = []struct{ Slug, Triple string }{
+	{"macos-arm64", "aarch64-apple-darwin"},
+	{"macos-x64", "x86_64-apple-darwin"},
+	{"linux-x64", "x86_64-unknown-linux-gnu"},
+	{"linux-arm64", "aarch64-unknown-linux-gnu"},
+	{"windows-x64", "x86_64-pc-windows-msvc"},
+	{"windows-arm64", "aarch64-pc-windows-msvc"},
+}
+
+// fetchPython puts Python for every computer type into
+// runtime/python/<slug>, with links turned into plain files.
+func fetchPython(drive string, only map[string]bool) error {
+	want := pythonVersion + "+" + pythonRelease
+	sums, err := shaSums(pythonDistURL + "/SHA256SUMS")
+	if err != nil {
+		return err
+	}
+	work, err := os.MkdirTemp("", "drivetool-python-")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(work)
+	for _, t := range pythonTargets {
+		if only != nil && !only[t.Slug] {
+			continue
+		}
+		dest := filepath.Join(drive, "runtime", "python", t.Slug)
+		if b, err := os.ReadFile(filepath.Join(dest, "VERSION")); err == nil && strings.TrimSpace(string(b)) == want {
+			fmt.Printf("python %s: %s already present\n", t.Slug, pythonVersion)
+			continue
+		}
+		asset := fmt.Sprintf("cpython-%s-%s-install_only.tar.gz", want, t.Triple)
+		sum, ok := sums[asset]
+		if !ok {
+			return fmt.Errorf("python %s: %s is not in the release's SHA256SUMS", t.Slug, asset)
+		}
+		fmt.Printf("python %s: downloading %s\n", t.Slug, asset)
+		archive := filepath.Join(work, asset)
+		if err := download(pythonDistURL+"/"+url.PathEscape(asset), archive, sum); err != nil {
+			return fmt.Errorf("python %s: %w", t.Slug, err)
+		}
+		x := filepath.Join(work, t.Slug)
+		if err := extract(archive, x); err != nil {
+			return fmt.Errorf("python %s: %w", t.Slug, err)
+		}
+		os.RemoveAll(dest)
+		// The archive's links (python -> python3.12, libpython3.12.so ->
+		// .so.1.0) would become full copies on exFAT; keep one of each.
+		dupes := map[string]bool{filepath.Join("bin", "python"): true, filepath.Join("bin", "python3.12"): true, filepath.Join("lib", "libpython3.12.so"): true}
+		skip := func(rel string) bool {
+			return dupes[rel] || rel == "include" || rel == filepath.Join("share", "man") || strings.HasSuffix(rel, "__pycache__") ||
+				strings.HasSuffix(rel, filepath.Join("lib", "python3.12", "test")) || rel == filepath.Join("Lib", "test")
+		}
+		if err := apps.CopyTree(filepath.Join(x, "python"), dest, skip); err != nil {
+			return fmt.Errorf("python %s: %w", t.Slug, err)
+		}
+		if err := os.WriteFile(filepath.Join(dest, "VERSION"), []byte(want+"\n"), 0o644); err != nil {
+			return err
+		}
+		os.Remove(archive)
+		os.RemoveAll(x)
+	}
+	return nil
+}
+
 // nodeChecksums reads a Node.js release's SHASUMS256.txt.
 func nodeChecksums(v string) (map[string]string, error) {
-	resp, err := http.Get(nodeDistURL + "/" + v + "/SHASUMS256.txt")
+	return shaSums(nodeDistURL + "/" + v + "/SHASUMS256.txt")
+}
+
+// shaSums reads a "checksum  filename" list.
+func shaSums(u string) (map[string]string, error) {
+	resp, err := http.Get(u)
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("nodejs.org: %s", resp.Status)
+		return nil, fmt.Errorf("%s: %s", u, resp.Status)
 	}
 	b, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
@@ -1133,6 +1216,14 @@ func check(drive string) error {
 			}
 			fmt.Printf("  %-16s %s\n", t.Slug, mark)
 		}
+		fmt.Println("\nPython (for the apps):")
+		for _, t := range pythonTargets {
+			mark := "missing — run drivetool fetch-python"
+			if b, err := os.ReadFile(filepath.Join(drive, "runtime", "python", t.Slug, "VERSION")); err == nil {
+				mark = "ok (" + strings.TrimSpace(string(b)) + ")"
+			}
+			fmt.Printf("  %-16s %s\n", t.Slug, mark)
+		}
 		fmt.Println("\nApps (installed from the Apps tab, once per computer type):")
 		for _, ap := range cfg.Apps {
 			var kinds []string
@@ -1140,6 +1231,9 @@ func check(drive string) error {
 				if _, err := os.Stat(filepath.Join(drive, "apps", ap.ID, t.Slug, ".installed.json")); err == nil {
 					kinds = append(kinds, t.Slug)
 				}
+			}
+			if _, err := os.Stat(filepath.Join(drive, "apps", ap.ID, "shared", ".installed.json")); err == nil {
+				kinds = append(kinds, "every computer")
 			}
 			mark := "not installed yet"
 			if len(kinds) > 0 {

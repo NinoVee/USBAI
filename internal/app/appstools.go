@@ -15,6 +15,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/ninovee/usbai/internal/config"
 )
 
 // Tools backed by the Pro edition's apps: the Camofox browser (web pages an
@@ -445,4 +447,36 @@ func (a *App) hasApp(id string) bool {
 		}
 	}
 	return false
+}
+
+// appRunEnv tells an app that uses an AI model which one to use: the
+// user's Claude key, else their OpenAI key (both from Settings → Cloud AI),
+// else the local model running on this drive.
+func (a *App) appRunEnv(id string) map[string]string {
+	var c config.App
+	for _, x := range a.cfg.Apps {
+		if x.ID == id {
+			c = x
+		}
+	}
+	if c.AI != "langchain" {
+		return nil
+	}
+	cs, _ := a.CloudSettings()
+	switch {
+	case cs.AnthropicKey != "":
+		return map[string]string{"LANGCHAIN_PROVIDER": "anthropic", "ANTHROPIC_API_KEY": cs.AnthropicKey, "LANGCHAIN_MODEL_NAME": "claude-opus-5-5"}
+	case cs.OpenAIKey != "":
+		model := cs.OpenAIModel
+		for _, m := range a.cfg.Models {
+			if model == "" && m.Provider == "openai" {
+				model = m.RemoteModel
+			}
+		}
+		return map[string]string{"LANGCHAIN_PROVIDER": "openai", "OPENAI_API_KEY": cs.OpenAIKey, "LANGCHAIN_MODEL_NAME": model}
+	}
+	if url, m, ok := a.chatEngine(); ok && !m.Cloud() {
+		return map[string]string{"LANGCHAIN_PROVIDER": "openai", "OPENAI_BASE_URL": url + "/v1", "OPENAI_API_KEY": "local", "LANGCHAIN_MODEL_NAME": m.ID}
+	}
+	return nil
 }

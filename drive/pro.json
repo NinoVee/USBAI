@@ -108,6 +108,60 @@
       "shared": true,
       "source": "https://codeload.github.com/AgriciDaniel/claude-ads/tar.gz/fc3908e786c318776df89a3a098333da377364be",
       "size_mb": 8
+    },
+    {
+      "id": "vibe-trading",
+      "name": "Vibe-Trading",
+      "description": "A trading research agent from HKU: describe a strategy in plain words and it researches markets, writes and backtests it, and can run it on practice (shadow) accounts. Opens in your browser. It uses your Claude or OpenAI key from Settings → Cloud AI, or else the AI model running on this drive, and reads free public market data online. GANG AI sets up no broker or exchange account; only connect one inside Vibe-Trading if you really mean to trade real money. About 0.9 GB per computer type.",
+      "homepage": "https://github.com/HKUDS/Vibe-Trading",
+      "kind": "server",
+      "source": "https://codeload.github.com/HKUDS/Vibe-Trading/tar.gz/66eb57634f16344b326d85fd1fe10029c7f348bb",
+      "source_dir": "repo",
+      "pip": [
+        "vibe-trading-ai[anthropic]==0.1.18"
+      ],
+      "steps": [
+        {
+          "run": "npm",
+          "args": [
+            "ci",
+            "--no-audit",
+            "--no-fund"
+          ],
+          "dir": "repo/frontend"
+        },
+        {
+          "run": "npm",
+          "args": [
+            "run",
+            "build"
+          ],
+          "dir": "repo/frontend"
+        },
+        {
+          "run": "python",
+          "args": [
+            "-c",
+            "import shutil; shutil.copytree('repo/frontend/dist', 'frontend/dist'); shutil.rmtree('repo')"
+          ]
+        }
+      ],
+      "runtime": "python",
+      "entry": "cli",
+      "args": [
+        "serve",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "${PORT}"
+      ],
+      "health": "/health",
+      "open": "/",
+      "ai": "langchain",
+      "env": {
+        "VIBE_TRADING_HOME": "${DATA}/home"
+      },
+      "size_mb": 900
     }
   ]
 }
