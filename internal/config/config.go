@@ -102,8 +102,10 @@ type App struct {
 	Description string `json:"description,omitempty"`
 	Homepage    string `json:"homepage,omitempty"`
 	// Kind is "server" (kept running; Health must answer), "tool" (run
-	// once per use), "skills" (instructions agents read; nothing runs) or
-	// "installer" (downloads this computer's installer and opens it).
+	// once per use), "skills" (instructions agents read; nothing runs),
+	// "installer" (downloads this computer's installer and opens it) or
+	// "portal" (links to a service that runs elsewhere; nothing is
+	// installed).
 	Kind string `json:"kind"`
 	// Shared apps are installed once for every kind of computer
 	// (apps/<id>/shared) because nothing in them is system-specific.
@@ -134,6 +136,10 @@ type App struct {
 	// (LANGCHAIN_PROVIDER, LANGCHAIN_MODEL_NAME and the provider's key or
 	// address) each time it starts.
 	AI string `json:"ai,omitempty"`
+	// Links are a portal's web pages (https only), and Status names the
+	// service whose account status it shows ("conway").
+	Links  []AppLink `json:"links,omitempty"`
+	Status string    `json:"status,omitempty"`
 	// Downloads are the installers of an "installer" app, by computer
 	// kind (e.g. "macos-arm64").
 	Downloads map[string]string `json:"downloads,omitempty"`
@@ -144,6 +150,12 @@ type App struct {
 	Env map[string]string `json:"env,omitempty"`
 	// SizeMB is the rough download size of one install, shown to the user.
 	SizeMB int `json:"size_mb,omitempty"`
+}
+
+// AppLink is one web page a portal opens.
+type AppLink struct {
+	Label string `json:"label"`
+	URL   string `json:"url"`
 }
 
 // AppSource is one source archive and the folder it goes in.

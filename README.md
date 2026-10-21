@@ -434,6 +434,17 @@ home, cache and temp folders are on the drive.
   on the drive and **Open installer** starts it. Available for Apple-silicon
   Macs, Windows x64 and Linux x64.
 
+- **Automaton portal** ([automaton](https://github.com/Conway-Research/automaton),
+  MIT): Automaton is a self-running agent that acts, spends from its own
+  crypto wallet and copies itself without asking anyone, and when it has no
+  cloud machine it runs its commands on the computer it is on. So GANG AI
+  never runs it: the Apps tab has a portal instead. It opens the Conway
+  dashboard (where you create and fund your Automaton in Conway Cloud) and the
+  Automaton guide, and with your Conway API key (encrypted in the vault, only
+  sent to Conway) it shows your credit balance and your cloud machines, each
+  with **Open terminal** for the machine's web terminal. Only https links and
+  terminal addresses are shown.
+
 Fixed ports keep what Vibe-Trading and Open Generative AI save in the browser
 (such as the MuAPI key) across restarts.
 

@@ -939,6 +939,44 @@ const COMPUTER_TOOLS = ["open_item", "list_files", "read_file", "write_file", "l
 const APP_STATES = { not_installed: "Not installed on this kind of computer", installing: "Installing…", installed: "Installed",
   starting: "Starting…", running: "● Running", error: "Problem" };
 let appsTimer = null;
+
+// renderPortal fills a portal's card: its links, the API key form and,
+// with a key saved, the account's credits and cloud machines.
+async function renderPortal(a, box) {
+  let p;
+  try { p = await api("GET", `/api/apps/${a.id}/portal`); } catch (err) { box.replaceChildren(el("div", { class: "sub error-text" }, err.message)); return; }
+  const open = (url) => () => window.open(url, "_blank", "noopener");
+  const links = el("div", { class: "portal-links" }, ...p.links.map((l) => el("button", { onclick: open(l.url) }, l.label + " ↗")));
+  const input = el("input", { type: "password", autocomplete: "off", placeholder: p.key_saved ? "•••••••• key saved (type to replace)" : "Conway API key" });
+  const form = el("form", { class: "inline-form portal-key", onsubmit: async (e) => {
+    e.preventDefault();
+    if (!input.value.trim()) return;
+    try { await api("POST", `/api/apps/${a.id}/key`, { key: input.value.trim() }); } catch (err) { alert(err.message); }
+    renderPortal(a, box);
+  } }, input, el("button", { class: "primary" }, "Save key"),
+    p.key_saved ? el("button", { type: "button", class: "danger", onclick: async () => {
+      if (!confirm("Remove the saved API key?")) return;
+      await api("POST", `/api/apps/${a.id}/key`, { key: "-" });
+      renderPortal(a, box);
+    } }, "Remove key") : null);
+  const status = el("div", { class: "portal-status" });
+  if (p.error) status.append(el("div", { class: "sub error-text" }, p.error));
+  if (p.status) {
+    const st = p.status;
+    status.append(el("div", {}, el("strong", {}, `Credits: $${st.credits_usd.toFixed(2)}`),
+      el("button", { class: "small-btn", onclick: () => renderPortal(a, box) }, "Refresh")));
+    if (!st.machines || !st.machines.length) status.append(el("div", { class: "sub" }, "No cloud machines yet — create your Automaton from the Conway dashboard."));
+    for (const m of st.machines || []) {
+      status.append(el("div", { class: "portal-machine" },
+        el("div", { class: "grow" }, el("code", {}, m.id), ` — ${m.status}`,
+          el("div", { class: "sub" }, [m.region, m.vcpu ? `${m.vcpu} vCPU` : "", m.memory_mb ? `${Math.round(m.memory_mb / 1024)} GB` : "", m.created_at ? "since " + fmtDate(m.created_at) : ""].filter(Boolean).join(" · "))),
+        m.terminal_url ? el("button", { class: "primary", onclick: open(m.terminal_url) }, "Open terminal ↗") : null));
+    }
+  } else if (!p.key_saved) {
+    status.append(el("div", { class: "sub" }, "Save your Conway API key to see your credits and cloud machines here. It is stored encrypted in your vault and only sent to Conway."));
+  }
+  box.replaceChildren(links, form, status);
+}
 async function renderApps() {
   clearTimeout(appsTimer);
   let r;
@@ -960,6 +998,8 @@ async function renderApps() {
       // Nothing can be installed until the drive has what the app needs.
     } else if (a.state === "not_installed") {
       buttons.push(act("install", `${a.kind === "installer" ? "Download" : "Install"}${a.size_mb ? ` (~${a.size_mb >= 1000 ? (a.size_mb / 1000).toFixed(1) + " GB" : a.size_mb + " MB"})` : ""}`, "primary"));
+    } else if (a.kind === "portal") {
+      // A portal has nothing to install or start; its card is filled below.
     } else if (a.state === "installed" || a.state === "error") {
       if (a.kind === "server") buttons.push(act("start", "Start", "primary"));
       if (a.kind === "installer") buttons.push(act("open", "Open installer", "primary"));
@@ -974,7 +1014,7 @@ async function renderApps() {
       log.textContent = t.log || "(nothing yet)";
       log.scrollTop = log.scrollHeight;
     };
-    buttons.push(el("button", { onclick: async () => { log.classList.toggle("hidden"); if (!log.classList.contains("hidden")) showLog(); } }, "Log"));
+    if (a.kind !== "portal") buttons.push(el("button", { onclick: async () => { log.classList.toggle("hidden"); if (!log.classList.contains("hidden")) showLog(); } }, "Log"));
     if (openLogs.has(a.id)) showLog();
     let sub = APP_STATES[a.state] || a.state;
     if (a.state === "not_installed" && (a.shared || a.kind === "installer")) sub = a.kind === "installer" ? "Not downloaded yet" : "Not installed yet";
@@ -983,6 +1023,9 @@ async function renderApps() {
       ? "Installed — press Start, then Open" : "Installed — starts by itself when an agent needs it";
     if (a.kind === "skills" && a.state === "installed") sub = "Installed for every computer — agents with the 📚 skill tools use it";
     if (a.kind === "installer" && a.state === "installed") sub = "Downloaded — press Open installer to install it on this computer";
+    if (a.kind === "portal") sub = "Runs in the cloud — nothing is installed or run on this computer";
+    const portal = a.kind === "portal" ? el("div", { class: "portal" }) : null;
+    if (portal) renderPortal(a, portal);
     if (a.missing) sub = a.missing;
     if (a.error) sub += " — " + a.error;
     if (a.other_kinds && a.other_kinds.length) sub += ` · also installed for ${a.other_kinds.join(", ")}`;
@@ -991,7 +1034,7 @@ async function renderApps() {
         el("strong", {}, a.name), a.homepage ? el("a", { href: a.homepage, target: "_blank", rel: "noopener noreferrer", class: "small app-home" }, "project page") : null,
         el("div", { class: "sub" }, a.description),
         el("div", { class: "sub" + (a.state === "error" ? " error-text" : "") }, sub),
-        log),
+        portal, log),
       el("div", { class: "app-actions" }, ...buttons)));
   }
   if (busy && state.view === "apps") appsTimer = setTimeout(renderApps, 2000);

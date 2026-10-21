@@ -343,6 +343,19 @@ func (a *App) Handler(ui fs.FS, port int) http.Handler {
 		}
 		writeJSON(w, map[string]string{"log": text})
 	})
+	mux.HandleFunc("GET /api/apps/{id}/portal", func(w http.ResponseWriter, r *http.Request) {
+		respond(w)(a.Portal(r.Context(), r.PathValue("id")))
+	})
+	mux.HandleFunc("POST /api/apps/{id}/key", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Key string `json:"key"`
+		}
+		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<12)).Decode(&body); err != nil {
+			httpError(w, err)
+			return
+		}
+		respondErr(w, a.SavePortalKey(r.PathValue("id"), body.Key))
+	})
 	mux.HandleFunc("POST /api/apps/{id}/{action}", func(w http.ResponseWriter, r *http.Request) {
 		if a.apps == nil {
 			httpError(w, errors.New("no apps on this drive"))

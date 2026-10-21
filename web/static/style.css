@@ -517,3 +517,10 @@ input[type=range] { padding: 0; }
 .app-actions { display: flex; flex-direction: column; gap: 6px; flex: none; }
 .app-log { margin: 8px 0 0; max-height: 220px; overflow: auto; font-size: 11px; white-space: pre-wrap; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 8px; }
 .error-text { color: var(--danger, #e5534b); }
+.portal { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.portal-links { display: flex; flex-wrap: wrap; gap: 8px; }
+.card form.portal-key, form.portal-key { flex-direction: row; flex-wrap: wrap; margin: 0; }
+.portal-key input { flex: 1; min-width: 200px; }
+.portal-status { display: flex; flex-direction: column; gap: 6px; }
+.portal-machine { display: flex; gap: 10px; align-items: center; border: 1px solid var(--border); border-radius: 8px; padding: 8px; }
+.small-btn { margin-left: 10px; padding: 2px 10px; font-size: 12px; }

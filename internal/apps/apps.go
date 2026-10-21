@@ -153,7 +153,12 @@ func (m *Manager) dir(id string) string {
 	return filepath.Join(m.root, "apps", id, m.slug)
 }
 func (m *Manager) dataDir(id string) string { return filepath.Join(m.root, "apps", id, "data") }
-func (m *Manager) installed(id string) bool { return fileExists(filepath.Join(m.dir(id), markerFile)) }
+func (m *Manager) installed(id string) bool {
+	if a, ok := m.apps[id]; ok && a.cfg.Kind == "portal" {
+		return true // nothing to install
+	}
+	return fileExists(filepath.Join(m.dir(id), markerFile))
+}
 func (m *Manager) nodeDir() string          { return filepath.Join(m.root, "runtime", "node", m.slug) }
 func (m *Manager) pythonDir() string        { return filepath.Join(m.root, "runtime", "python", m.slug) }
 
@@ -182,6 +187,9 @@ func needs(c config.App) (node, python bool) {
 
 // ready reports what the drive lacks to install c on this computer.
 func (m *Manager) ready(c config.App) error {
+	if c.Kind == "portal" {
+		return nil
+	}
 	if c.Kind == "installer" {
 		if c.Downloads[m.slug] == "" {
 			return fmt.Errorf("%s has no installer for %s", c.Name, m.slug)
